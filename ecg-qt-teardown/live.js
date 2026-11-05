@@ -1,12 +1,12 @@
-// The QT machine as a page you drive. One input, q (the slider, ← → keys); a button per subsystem flies the camera
-// there, fades the rest and hangs its callouts; GLASS clears the housings, EXPLODED pulls the stations apart,
-// HAND CHECK and CODE NOTES open the worked numbers and the warnings. Left alone it plays the tour with the
-// operator's cursor; a click, drag, wheel or key hands control over, 25 s of quiet hands it back.
+// The QT machine as a page you drive. One input, q (the dial slider, ← → keys). A subsystem button (or its block in
+// the schematic) frames that part and applies the mode: ISOLATE fades the rest, CUT also slices the part open, ALONE
+// hides the rest. The camera buttons give the named views. Left alone it plays the tour with the operator's cursor;
+// a click, drag, wheel or key hands control over, 25 s of quiet hands it back.
 import {Q_RANGE, run} from './model.js';
 import {createConsole, DISPLAY} from './console.js';
 import {callouts} from './notes.js';
 import {createStage} from './stage.js';
-import {displayAt, DURATION, focusAt, makeCursor, qAt, VIEW_SHIFT, VIEWS} from './tour.js';
+import {CAM_KEYS, CAMS, DURATION, makeCursor, MODES, SUB_VIEWS, tourAt, VIEW_SHIFT} from './tour.js';
 
 const W = 1600;
 const H = 900;
@@ -28,7 +28,7 @@ html,body{margin:0;background:#efe9df;overflow:hidden}
 .bt,.x{pointer-events:auto;cursor:pointer}
 .bt:hover{filter:brightness(.96)}
 .hit{position:absolute;pointer-events:auto;cursor:ew-resize}
-.tourchip{position:absolute;left:800px;top:740px;transform:translateX(-50%);display:flex;align-items:center;gap:7px;height:22px;padding:0 11px;border:1px solid #e6dccd;border-radius:4px;background:rgba(252,249,244,.95);color:#1f1c19;font:700 9px 'JetBrains Mono',monospace;letter-spacing:1.3px;white-space:nowrap;cursor:pointer;pointer-events:auto}
+.tourchip{position:absolute;left:800px;top:740px;transform:translateX(-50%);display:flex;align-items:center;gap:7px;height:20px;padding:0 10px;border:1px solid #e6dccd;border-radius:4px;background:rgba(252,249,244,.95);color:#1f1c19;font:700 8.6px 'JetBrains Mono',monospace;letter-spacing:1.2px;white-space:nowrap;cursor:pointer;pointer-events:auto}
 .tourchip i{display:block;width:6px;height:6px;border-radius:50%;background:#e8336f}
 .tourchip.on i{animation:blink 1.2s steps(2) infinite}
 @keyframes blink{50%{opacity:.15}}
@@ -81,9 +81,11 @@ export function runLive() {
   let q = 440;
   let focus = 'all';
   let focusT = 0;
+  let mode = 'isolate';
+  let cam = 'hero'; // a CAMS key, or 'sub': frame the focused subsystem
   const disp = Object.fromEntries(DISPLAY.map((k) => [k, {on: k === 'labels' ? 1 : 0, t: -9}]));
   const off = {az: 0, el: 0, k: 1};
-  const cam = {...VIEWS.all};
+  const camPos = {...CAMS.hero.v};
   let ring = {t: -9, x: 0, y: 0};
   let snap = false;
   const eased = (k, dur = 0.7) => {
@@ -121,20 +123,38 @@ export function runLive() {
     if (f === focus) return;
     focus = f;
     focusT = T;
+    if (f !== 'all') cam = 'sub';
     Object.assign(off, {az: 0, el: 0, k: 1});
   };
+  const pick = (k) => {
+    takeOver();
+    setFocus(focus === k ? 'all' : k);
+  };
+  ui.onPick = pick;
   ui.btn.all.addEventListener('click', () => {
     takeOver();
     pulse('all');
     setFocus('all');
   });
-  for (const k of Object.keys(VIEWS))
-    if (k !== 'all')
-      ui.btn[k].addEventListener('click', () => {
-        takeOver();
-        pulse(k);
-        setFocus(focus === k ? 'all' : k);
-      });
+  for (const k of Object.keys(SUB_VIEWS))
+    ui.btn[k].addEventListener('click', () => {
+      pulse(k);
+      pick(k);
+    });
+  for (const m of MODES)
+    ui.btn[m].addEventListener('click', () => {
+      takeOver();
+      pulse(m);
+      mode = m;
+      focusT = Math.min(focusT, T - 0.2);
+    });
+  for (const k of CAM_KEYS)
+    ui.btn['cam_' + k].addEventListener('click', () => {
+      takeOver();
+      pulse('cam_' + k);
+      cam = k;
+      Object.assign(off, {az: 0, el: 0, k: 1});
+    });
   const toggle = (k, v) => {
     const on = v ?? (disp[k].on ? 0 : 1);
     if (disp[k].on === on) return;
@@ -189,7 +209,11 @@ export function runLive() {
       toggle('check', 0);
       toggle('notes', 0);
       setFocus('all');
-    } else if (k === 'l') ui.btn.labels.click();
+    } else if (/^[1-5]$/.test(k)) ui.btn['cam_' + CAM_KEYS[+k - 1]].click();
+    else if (k === 'i') ui.btn.isolate.click();
+    else if (k === 'c') ui.btn.cut.click();
+    else if (k === 'a') ui.btn.alone.click();
+    else if (k === 'l') ui.btn.labels.click();
     else if (k === 'g') ui.btn.glass.click();
     else if (k === 'e') ui.btn.exploded.click();
     else if (k === 'o') ui.btn.orbit.click();
@@ -252,14 +276,15 @@ export function runLive() {
     let cursor;
     if (AP.on) {
       const c = (T - AP.t0) % DURATION;
-      const [f, f0] = focusAt(c);
-      if (f !== focus) {
-        focus = f;
-        focusT = T - (c - f0);
+      const ts = tourAt(c);
+      if (ts.focus !== focus) {
+        focus = ts.focus;
+        focusT = T - (c - ts.focusT);
       }
-      q = qAt(c);
-      const {d} = displayAt(c);
-      for (const k of DISPLAY) if (disp[k].on !== d[k]) Object.assign(disp[k], {on: d[k], t: T});
+      mode = ts.mode;
+      cam = ts.cam;
+      q = ts.q;
+      for (const k of DISPLAY) if (disp[k].on !== ts.d[k]) Object.assign(disp[k], {on: ts.d[k], t: T});
       cursor = tourCursor(c);
     } else {
       if (T - lastInput > IDLE) startTour();
@@ -268,28 +293,27 @@ export function runLive() {
     }
     const res = run(Math.round(q));
     const fkey = focus === 'all' ? null : focus;
+    if (cam === 'sub' && !fkey) cam = 'hero';
     const since = T - focusT;
     const iso = fkey ? ss(0.2, 0.9, since) : 0;
     const explode = eased('exploded', 0.9);
     // a housing in focus goes clear on its own, so its inside is what the camera sees
     const glass = Math.max(eased('glass', 0.6), fkey === 'integ' || fkey === 'c50' ? iso : 0);
-    // camera
-    const tgt = {...VIEWS[focus]};
-    const orbitOn = disp.orbit.on;
-    tgt.az += off.az + (orbitOn ? 10 * Math.sin((T - disp.orbit.t) * 0.25) : 0);
-    tgt.el = clamp(tgt.el + off.el, -15, 85);
-    tgt.d *= off.k * (1 + 0.18 * explode * (focus === 'all' ? 1 : 0.4));
+    const tgt = {...(cam === 'sub' ? SUB_VIEWS[fkey] : CAMS[cam].v)};
+    tgt.az += off.az + (disp.orbit.on ? 10 * Math.sin((T - disp.orbit.t) * 0.25) : 0);
+    tgt.el = clamp(tgt.el + off.el, -15, 89);
+    tgt.d *= off.k * (1 + 0.18 * explode * (cam === 'hero' ? 1 : 0.4));
     const k = snap ? 1 : 1 - Math.exp(-dt / (AP.on ? 0.32 : 0.4));
     snap = false;
-    cam.az += wrap(tgt.az - cam.az) * k;
-    for (const key of ['tx', 'ty', 'tz', 'el', 'd']) cam[key] += (tgt[key] - cam[key]) * k;
-    st.frame({res, t: T, focus: fkey, iso, explode, glass}, {...cam, ...VIEW_SHIFT, az: cam.az * D2R, el: cam.el * D2R});
-    const calls = callouts(res, fkey).map((c) => {
+    camPos.az += wrap(tgt.az - camPos.az) * k;
+    for (const key of ['tx', 'ty', 'tz', 'el', 'd']) camPos[key] += (tgt[key] - camPos[key]) * k;
+    st.frame({res, t: T, focus: fkey, iso, mode, explode, glass, hide: cam === 'inside' ? ['c50'] : []}, {...camPos, ...VIEW_SHIFT, az: camPos.az * D2R, el: camPos.el * D2R});
+    const calls = callouts(res, {focus: fkey, cam}).map((c) => {
       const o = st.machine.groupOffset(c.g);
       return {...c, p: [c.p[0] + o.x, c.p[1] + o.y, c.p[2] + o.z]};
     });
     const display = Object.fromEntries(DISPLAY.map((x) => [x, disp[x].on]));
-    ui.update(res, {focus: fkey, display, labels: eased('labels', 0.4) * ss(0.7, 1.3, since), callouts: calls, project: st.project, cursor});
+    ui.update(res, {focus: fkey, mode, cam, display, labels: eased('labels', 0.4) * ss(0.7, 1.3, Math.min(since, T - camT0())), callouts: calls, project: st.project, cursor});
     if (tourChip.classList.contains('on') !== AP.on || !tourChip.firstChild) {
       tourChip.classList.toggle('on', AP.on);
       tourChip.innerHTML = AP.on ? '<i></i>AUTO TOUR · CLICK ANYWHERE TO TAKE OVER' : '▶ RESUME TOUR';
@@ -300,6 +324,16 @@ export function runLive() {
     }
     requestAnimationFrame(frame);
   };
+  // labels wait for the camera to settle after a camera change too
+  let camWas = cam;
+  let camAt = -9;
+  const camT0 = () => {
+    if (cam !== camWas) {
+      camWas = cam;
+      camAt = T;
+    }
+    return camAt;
+  };
   st.renderer.compileAsync(st.scene, st.camera).then(() => requestAnimationFrame(frame));
   window.LIVE = {
     st,
@@ -307,14 +341,19 @@ export function runLive() {
     get T() {
       return T;
     },
-    set(qq, f, d = {}) {
+    set(qq, f, d = {}, extra = {}) {
       takeOver();
       lastInput = 1e9;
       q = qq;
       if (f) {
         focus = f;
         focusT = T - 5;
+        cam = f === 'all' ? 'hero' : 'sub';
       }
+      if (extra.cam) cam = extra.cam;
+      if (extra.mode) mode = extra.mode;
+      camAt = T - 5;
+      camWas = cam;
       for (const [kk, v] of Object.entries(d)) Object.assign(disp[kk], {on: v, t: T - 5});
       snap = true;
     },

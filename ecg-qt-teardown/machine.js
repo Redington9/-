@@ -1,7 +1,11 @@
 // The machine's geometry, built from code, and update(res) that poses every part from run(q). Nothing here keeps its
 // own numbers: positions, fills, angles and textures all come from the model result.
 import * as THREE from 'three';
-import {BINS, GREY, N, Q_RANGE, run, RULES} from './model.js';
+import {BINS, GREY, LOUPE_BEAT, LOWER_SQ, N, NOMOGRAM, Q_RANGE, RR_MAX, RR_MIN, run, RULES, SQUARE, UPPER_SQ} from './model.js';
+
+const HR_LO = 60000 / RR_MAX; // the HR window the RR governor allows
+const HR_HI = 60000 / RR_MIN;
+const GRADES = Math.max(...RULES.map((r) => r.grade));
 
 export const INK = '#1f1c19';
 export const ACC = '#e8336f'; // the one accent: the part doing the work right now
@@ -468,7 +472,7 @@ export function buildMachine() {
     const {g, c, t} = loupeTex;
     const W = c.width;
     const H = c.height;
-    const R = res.det.R[3] ?? res.det.R[0];
+    const R = res.det.R[LOUPE_BEAT - 1] ?? res.det.R[0];
     const s0 = R - 28; // the sample with paint value 0 (paint c sits at s0 + c)
     const px = (cv) => ((cv - LOUPE.c0) / (LOUPE.c1 - LOUPE.c0)) * W;
     const py = (v) => H * (1 - (LY(v) - LOUPE.y0) / (LOUPE.y1 - LOUPE.y0));
@@ -533,7 +537,7 @@ export function buildMachine() {
       const tw = g.measureText(label).width;
       g.fillText(label, Math.min(W - tw - 6, px(cv) + 6), top);
     };
-    vline(res.nom.qt, INK, [10, 8], `QT_nom ${res.nom.qt} (PLACEHOLDER)`, 64);
+    vline(res.nom.qt, INK, [10, 8], `QT_nom ${res.nom.qt}${NOMOGRAM.placeholder ? ' (PLACEHOLDER)' : ''}`, 64);
     vline(res.q, ACC, [], `q = ${Math.round(res.q)} ms`, 96);
     // the trace
     g.strokeStyle = INK;
@@ -548,7 +552,7 @@ export function buildMachine() {
     g.stroke();
     g.fillStyle = '#8d8478';
     g.font = FONT(600, 18);
-    g.fillText(`BEAT 4 OF ${res.det.R.length} · R at sample ${R} · x: paint value (ms) · y: mV ×1.9 · SHAPE INVENTED`, 14, H - 14);
+    g.fillText(`BEAT ${LOUPE_BEAT} OF ${res.det.R.length} · R at sample ${R} · x: paint value (ms) · y: mV ×${LOUPE.k} · SHAPE INVENTED`, 14, H - 14);
     t.needsUpdate = true;
   }
   function drawRuler(res) {
@@ -577,8 +581,8 @@ export function buildMachine() {
     });
     g.fillStyle = INK;
     g.font = FONT(700, 20);
-    g.fillText(`QT_nom−280`, 4, 22);
-    const tx = `QT_nom+80`;
+    g.fillText(`QT_nom−${LOWER_SQ * SQUARE + SQUARE}`, 4, 22);
+    const tx = `QT_nom+${UPPER_SQ * SQUARE}`;
     g.fillText(tx, W - g.measureText(tx).width - 4, 22);
     t.needsUpdate = true;
   }
@@ -594,7 +598,7 @@ export function buildMachine() {
       const a = ((hr - 80) / 50) * 2.36;
       g.save();
       g.rotate(a);
-      g.fillStyle = hr >= 37.5 && hr <= 120 ? INK : '#b8ae9f';
+      g.fillStyle = hr >= HR_LO && hr <= HR_HI ? INK : '#b8ae9f';
       g.fillRect(-1.5, -W / 2 + 14, 3, hr % 10 ? 16 : 30);
       if (hr % 20 === 0) {
         g.font = FONT(700, 24);
@@ -602,12 +606,12 @@ export function buildMachine() {
       }
       g.restore();
     }
-    // the HR window the RR governor allows: 37.5..120 bpm
+    // the HR window the RR governor allows
     g.strokeStyle = ACC;
     g.lineWidth = 6;
     g.beginPath();
     const aa = (hr) => ((hr - 80) / 50) * 2.36 - Math.PI / 2;
-    g.arc(0, 0, W / 2 - 8, aa(37.5), aa(120));
+    g.arc(0, 0, W / 2 - 8, aa(HR_LO), aa(HR_HI));
     g.stroke();
     // profile unknown
     g.setLineDash([12, 10]);
@@ -631,7 +635,7 @@ export function buildMachine() {
     p.g.fillText(`QT_nom ${res.nom.qt}`, 22, 58);
     p.g.fillStyle = '#ffb02e';
     p.g.font = FONT(700, 26);
-    p.g.fillText('PLACEHOLDER · xlsx missing', 22, 104);
+    if (NOMOGRAM.placeholder) p.g.fillText('PLACEHOLDER · xlsx missing', 22, 104);
     p.t.needsUpdate = true;
   }
   function drawGates(res) {
@@ -664,15 +668,15 @@ export function buildMachine() {
     const cy = H - 100;
     const R = 400;
     // six grades: 1-3 Normal (cool), 4-6 Abnormal (warm)
-    for (let k = 0; k < 6; k++) {
-      const a0 = Math.PI + (k / 6) * Math.PI;
-      const a1 = Math.PI + ((k + 1) / 6) * Math.PI;
+    for (let k = 0; k < GRADES; k++) {
+      const a0 = Math.PI + (k / GRADES) * Math.PI;
+      const a1 = Math.PI + ((k + 1) / GRADES) * Math.PI;
       g.beginPath();
       g.moveTo(cx, cy);
       g.arc(cx, cy, R, a0 + 0.01, a1 - 0.01);
       g.closePath();
       const on = res.out.grade === k + 1;
-      g.fillStyle = k < 3 ? (on ? '#2b7bba' : 'rgba(43,123,186,.22)') : on ? '#cf2a1d' : 'rgba(207,42,29,.2)';
+      g.fillStyle = RULES.find((r) => r.grade === k + 1)?.pred === 'Normal' ? (on ? '#2b7bba' : 'rgba(43,123,186,.22)') : on ? '#cf2a1d' : 'rgba(207,42,29,.2)';
       g.fill();
       g.fillStyle = on ? '#fff' : INK;
       g.font = FONT(800, 46);
@@ -714,6 +718,11 @@ export function buildMachine() {
   // ------------------------------------------------------------------------------------------------ update
   // res: run(q); o: {t (s, drives the governor's spin), focus (group key or null), explode 0..1, glass 0..1}
   const EXPL = {feeder: [0, 0.5, -1.2], rpeak: [0, 0.9, -1.2], paint: [0, 0.2, -0.6], ruler: [0, 0.1, -0.25], integ: [0, 0.25, 0.05], hoppers: [0, 0, 0.3], dgears: [0, 0, 0.7], sgears: [0, 0, 1.15], ipsel: [0, 0, 1.6], gates: [1.0, 0, 0.6], output: [1.5, 0.2, 1.2], c50: [2.2, 0, 0.3], gov: [-0.8, 0, -0.3], nomo: [-0.8, 0, 0.6]};
+  // the cutaway: one plane, applied to the focused subsystem's materials only; boards and rails are cut across x
+  const clip = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
+  const CUT_AXIS = {feeder: 'x', rpeak: 'x', paint: 'x'};
+  let BOX = null;
+  let lastCut = null;
   const update = (res, o) => {
     // textures that depend on q redraw when q changes; the rest only when the front end's numbers do
     const key = `${res.q}`;
@@ -753,7 +762,7 @@ export function buildMachine() {
     });
     // governor: arms swing out with HR across the RR window, the head turns at HR
     const hr = res.gov.hr;
-    const swing = 0.25 + 0.75 * Math.min(1, Math.max(0, (hr - 37.5) / (120 - 37.5)));
+    const swing = 0.25 + 0.75 * Math.min(1, Math.max(0, (hr - HR_LO) / (HR_HI - HR_LO)));
     gov.head.rotation.y = ((o.t || 0) * hr) / 60 * Math.PI * 2 * 0.25;
     gov.arms.forEach((a) => (a.rotation.z = a.userData.sx * swing));
     // nomogram: needle at HR, follower lifted by QT_nom
@@ -811,7 +820,7 @@ export function buildMachine() {
     });
     gates.token.position.x = res.out.winner < 0 ? GATE.x0 - 0.45 : GATE.x0 + res.out.winner * GATE.dx;
     // dial needle at the grade
-    dial.needle.rotation.z = res.out.grade ? Math.PI / 2 - ((res.out.grade - 0.5) / 6) * Math.PI : Math.PI / 2;
+    dial.needle.rotation.z = res.out.grade ? Math.PI / 2 - ((res.out.grade - 0.5) / GRADES) * Math.PI : Math.PI / 2;
     // glass: the integrator housing and the C5.0 shell go clear
     const gl = o.glass || 0;
     // exploded: each subsystem slides out along its own direction
@@ -820,15 +829,45 @@ export function buildMachine() {
       const v = EXPL[k] || [0, 0, 0];
       grp.position.set(v[0] * ex, v[1] * ex, v[2] * ex);
     }
-    // isolate: every other subsystem fades to a ghost
+    // modes for the focused subsystem: isolate (the rest fade to a ghost), cut (the same, and the part is sliced open
+    // by a plane that slides in to its middle), alone (the rest are hidden)
     const iso = o.iso ?? 0;
+    const mode = o.mode || 'isolate';
+    const fk = o.focus;
+    const ghost = mode === 'alone' ? 1 : 0.86;
+    // `hide`: groups a camera has to see past (the C5.0 bench behind the gate row)
+    for (const [k, grp] of Object.entries(groups)) grp.visible = !(mode === 'alone' && fk && k !== fk && k !== 'table' && iso > 0.98) && !(o.hide || []).includes(k);
     for (const [m, k, base, noDepth] of mats) {
-      const dim = o.focus && k !== o.focus && k !== 'table' ? iso : 0;
-      let op = base * (1 - 0.86 * dim);
+      const dim = fk && k !== fk && k !== 'table' ? iso : 0;
+      let op = base * (1 - ghost * dim);
       if (m === integ.housingMat) op *= 1 - gl * 0.8;
       if (m === c50.shell) op *= 1 - gl * 0.85;
       m.opacity = op;
       m.depthWrite = !noDepth && op > 0.6;
+    }
+    if (!BOX) {
+      BOX = {};
+      for (const [k, grp] of Object.entries(groups)) BOX[k] = new THREE.Box3().setFromObject(grp);
+    }
+    const ck = mode === 'cut' && fk ? fk : null;
+    if (ck !== lastCut) {
+      lastCut = ck;
+      for (const [m, k] of mats) {
+        const on = k === ck;
+        m.clippingPlanes = on ? [clip] : null;
+        m.clipShadows = on;
+        m.side = on ? THREE.DoubleSide : THREE.FrontSide;
+        m.needsUpdate = true;
+      }
+    }
+    if (ck) {
+      const ax = CUT_AXIS[ck] || 'z';
+      const b = BOX[ck];
+      const off = groups[ck].position[ax];
+      const mid = (b.min[ax] + b.max[ax]) / 2 + off;
+      const pos = mid + (1 - iso) * (b.max[ax] - b.min[ax]) * 0.55;
+      clip.normal.set(ax === 'x' ? -1 : 0, 0, ax === 'z' ? -1 : 0);
+      clip.constant = pos; // keeps the points with coordinate <= pos: the near (or right) half is cut away
     }
   };
   const groupOffset = (k) => groups[k]?.position ?? new THREE.Vector3();

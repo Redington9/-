@@ -18,6 +18,16 @@ export const RR_MAX = 1600;
 export const PAINT_LEAD = 28; // index <- R_peaks_time[R] - 28  (when the peak is at >= 100)
 export const GREY = 800; // unpainted samples
 export const SQUARE = 40; // one colour bin = 40 ms = one small ECG square at 25 mm/s
+export const PAPER_SPEED = 25; // mm/s, standard ECG paper: 1 mm = 1000 / 25 = 40 ms = SQUARE
+export const UPPER_SQ = 2; // UpperColourLimit = QT_value + 40 * 2
+export const LOWER_SQ = 6; // LowerColourlimit = QT_value - 40 * 6
+export const HR_FAST = 85; // if (HR >= 85) maximumColourVector <- QT_value + 40
+export const FAST_SQ = 1;
+export const R_KEEP_COMMENT = 0.8; // what script 1's comment above the 0.7 line says
+export const RULE_RATIO = 0.5; // S_a / (S_a + S_b) > 0.5 in rules 2, 4, 7, 9
+export const SAMPLE_MS = 1; // 1 sample = 1 ms (10,000 samples for a 10 s strip)
+export const STRIP_S = 10;
+export const LOUPE_BEAT = 4; // the beat the loupe and the ECG chart magnify (1-based)
 
 // UNVERIFIED: the QT nomogram table (QTnomogram.xlsx) is not attached. 440 ms is a labelled placeholder for any HR.
 export const QT_NOM_PLACEHOLDER = 440;
@@ -137,9 +147,9 @@ export function rrGovernor(R) {
 // ------------------------------------------------------------------------------------------------ stage 3: nomogram
 export function nomogramCam(hr) {
   const qt = Math.round(NOMOGRAM.lookup(hr));
-  const upper = qt + 2 * SQUARE; // UpperColourLimit
-  const lower = qt - 6 * SQUARE; // LowerColourlimit
-  const maxPaint = hr >= 85 ? qt + SQUARE : upper; // maximumColourVector
+  const upper = qt + UPPER_SQ * SQUARE; // UpperColourLimit
+  const lower = qt - LOWER_SQ * SQUARE; // LowerColourlimit
+  const maxPaint = hr >= HR_FAST ? qt + FAST_SQ * SQUARE : upper; // maximumColourVector
   return {qt, upper, lower, maxPaint};
 }
 
@@ -255,51 +265,80 @@ export function inflection(A) {
 }
 
 // ------------------------------------------------------------------------------------------------ stage 8: rules
-const T_HEAD = 'This decision has been made based on the assumption that the QT-interval is considered normal when the area under the T-wave contains cool pseudo-colours (purple to blue to green), and prolonged with risk of TdP when it contains warm pseudo-colours (yellow to orange to red).';
-const T_TAIL = 'Based on the pseudo-colouring scale, the estimated value of the QT-interval ranges from';
-// [id, test(IP, S1..S5), pred, grade, window lo, window hi, lead sentence, body]
-export const RULES = [
-  ['R1', (ip) => ip === 1.5, 'Normal', 1, -160, -120, 'IP = 1.5',
+// Each rule as script 3 writes it: its clauses (joined with R's vectorised &), pred, confidence_rate, the QT window
+// relative to the nomogram value, and the two halves of its paste() text.
+// clause kinds: ['ip', '=' | '>=', v], ['lt0', j] S_j < 0, ['gt0', j] S_j > 0, ['ratio', a, b] S_a/(S_a+S_b) > RULE_RATIO,
+// ['gtabs', a, b] S_a > |S_b|
+const RULE_DATA = [
+  ['R1', [['ip', '=', 1.5]], 'Normal', 1, -160, -120,
     'The QT-interval of this ECG is very likely normal, and the patient is not considered at risk for TdP.',
     'The maximum concave down in the pseudo-coloured area was considered to be the T-wave, and most of its colours are cool (purple to blue to green), with a greater amount of blue than green, indicating a normal QT-interval. The T-wave probably ends within the green colour region, which indicates that the QT/HR falls below the nomogram line by approximately 120 ms or more, showing no risk of TdP.'],
-  ['R2', (ip, s) => ip === 2.5 && s[0] < 0 && s[0] / (s[0] + s[1]) > 0.5, 'Normal', 1, -160, -120, 'IP = 2.5 & S1 < 0 & S1/(S1+S2) > 0.5',
+  ['R2', [['ip', '=', 2.5], ['lt0', 1], ['ratio', 1, 2]], 'Normal', 1, -160, -120,
     'The QT-interval of this ECG is very likely normal, and the patient is not considered at risk for TdP.',
     'The maximum concave down in the pseudo-coloured area was considered to be the T-wave, and most of its colours are cool (purple to blue to green), with a greater amount of blue than green, indicating a normal QT-interval. The T-wave probably ends within the green-lime colour region, which indicates that the QT/HR falls below the nomogram line by approximately 120 ms or more, showing no risk of TdP.'],
-  ['R3', (ip) => ip === 2.5, 'Normal', 2, -120, -80, 'IP = 2.5',
+  ['R3', [['ip', '=', 2.5]], 'Normal', 2, -120, -80,
     'The QT-interval of this ECG is probably normal, and the patient is not considered at risk of TdP.',
     'The maximum concave down in the pseudo-coloured area was considered to be the T-wave, and most of its colours are cool (purple to blue to green), with a greater amount of green than blue, indicating a normal QT-interval. The T-wave probably ends within the lime-yellow colour region, which indicates that the QT/HR falls below the nomogram line by approximately 80 ms or more, showing no risk of TdP.'],
-  ['R4', (ip, s) => ip === 3.5 && s[1] < 0 && s[1] / (s[1] + s[2]) > 0.5, 'Normal', 2, -120, -80, 'IP = 3.5 & S2 < 0 & S2/(S2+S3) > 0.5',
+  ['R4', [['ip', '=', 3.5], ['lt0', 2], ['ratio', 2, 3]], 'Normal', 2, -120, -80,
     'The QT-interval of this ECG is probably normal, and the patient is not considered at risk of TdP.',
     'The maximum concave down in the pseudo-coloured area was considered to be the T-wave, and most of its colours are cool (purple to blue to green), with a greater amount of green than blue, indicating a normal QT-interval. The T-wave probably ends within the lime-yellow colour region, which indicates that the QT/HR falls below the nomogram line by approximately 80 ms or more, showing no risk of TdP.'],
-  ['R5', (ip) => ip === 3.5, 'Normal', 3, -80, -40, 'IP = 3.5',
+  ['R5', [['ip', '=', 3.5]], 'Normal', 3, -80, -40,
     'The QT-interval of this ECG is possibly normal, and the patient is not considered at risk of TdP.',
     'The maximum concave down in the pseudo-coloured area was considered to be the T-wave, and most of its colours are blue to green to yellow, with a greater amount of green than yellow, indicating a normal QT-interval. The T-wave is probably ended within the yellow region, which indicates that the QT/HR falls below the nomogram line by approximately 40 ms or more, showing no risk for TdP.'],
-  ['R6', (ip, s) => ip === 4.5 && s[0] < 0 && s[1] > 0 && s[1] > Math.abs(s[0]), 'Abnormal', 4, -40, 0, 'IP = 4.5 & S1 < 0 & S2 > 0 & S2 > |S1|',
+  ['R6', [['ip', '=', 4.5], ['lt0', 1], ['gt0', 2], ['gtabs', 2, 1]], 'Abnormal', 4, -40, 0,
     'The QT-interval of this ECG is possibly abnormal, and the patient is considered at risk of TdP.',
     'The maximum concave down in the pseudo-coloured area was considered to be the T-wave, and most of its colours are warm colours (green to yellow to orange), with a greater amount of yellow than green, indicating an abnormal QT-interval. It looks like there is an ST-elevation as there is a purple-blue wave before the T-wave. The T-wave probably ends within the yellow-orange region, which indicates that the QT/HR falls on or very close to the nomogram line, showing risk of TdP.'],
-  ['R7', (ip, s) => ip === 4.5 && s[2] < 0 && s[2] / (s[2] + s[3]) > 0.5, 'Normal', 3, -80, -40, 'IP = 4.5 & S3 < 0 & S3/(S3+S4) > 0.5',
+  ['R7', [['ip', '=', 4.5], ['lt0', 3], ['ratio', 3, 4]], 'Normal', 3, -80, -40,
     'The QT-interval of this ECG is possibly normal, and the patient is not considered at risk of TdP.',
     'The maximum concave down in the pseudo-coloured area was considered to be the T-wave, and most of its colours are green to yellow, with a greater amount of green than yellow, indicating a normal QT-interval. The T-wave is probably ended within the yellow region, which indicates that the QT/HR falls below the nomogram line by approximately 40 ms or more, showing no risk for TdP.'],
-  ['R8', (ip) => ip === 4.5, 'Abnormal', 4, -40, 0, 'IP = 4.5',
+  ['R8', [['ip', '=', 4.5]], 'Abnormal', 4, -40, 0,
     'The QT-interval of this ECG is possibly abnormal, and the patient is considered at risk of TdP.',
     'The maximum concave down in the pseudo-coloured area was considered to be the T-wave, and most of its colours are warm (green to yellow to orange), with a greater amount of yellow than green, indicating an abnormal QT-interval. The T-wave is probably ended within the yellow-orange region, which indicates that the QT/HR falls on or very close to the nomogram line, showing risk for TdP.'],
-  ['R9', (ip, s) => ip === 5.5 && s[3] < 0 && s[3] / (s[3] + s[4]) > 0.5, 'Abnormal', 5, 0, 40, 'IP = 5.5 & S4 < 0 & S4/(S4+S5) > 0.5',
+  ['R9', [['ip', '=', 5.5], ['lt0', 4], ['ratio', 4, 5]], 'Abnormal', 5, 0, 40,
     'The QT-interval of this ECG is probably abnormal, and the patient is considered at risk of TdP.',
     'The maximum concave down in the pseudo-coloured area was considered to be the T-wave, and most of its colours are warm (yellow to orange), with a greater amount of yellow than orange, indicating an abnormal QT-interval. The T-wave probably ends within the yellow-orange region, which indicates that the QT/HR falls above the nomogram line, showing risk of TdP.'],
-  ['R10', (ip) => ip >= 5.5, 'Abnormal', 6, 40, 80, 'IP >= 5.5',
+  ['R10', [['ip', '>=', 5.5]], 'Abnormal', 6, 40, 80,
     'The QT-interval of this ECG is very likely abnormal, and the patient is considered at risk of TdP.',
     'The maximum concave down in the pseudo-coloured area was considered to be the T-wave, and most of its colours are warm colours (orange to red), indicating an abnormal QT-interval. The T-wave probably ends within the orange-red region, which indicates that the QT/HR falls above the nomogram line, showing risk of TdP.'],
-].map(([id, test, pred, grade, lo, hi, cond, lead, body]) => ({id, test, pred, grade, lo, hi, cond, lead, body}));
+];
+const fmtS = (v) => (Math.abs(v) < 0.05 ? '0.0' : v.toFixed(1));
+/** One clause at this IP and S (1-based S_j = S[j-1]): {sym, txt (numbers substituted), ok: true | false | null (NA)}. */
+export function clause(c, ip, S) {
+  const s = (j) => S[j - 1];
+  const [kind, a, b] = c;
+  if (kind === 'ip') {
+    const op = a === '=' ? '=' : '≥';
+    return {sym: `IP ${op} ${b}`, txt: `IP ${ip ?? 'NA'} ${op} ${b}`, ok: ip === null ? null : a === '=' ? ip === b : ip >= b};
+  }
+  if (kind === 'lt0') return {sym: `S${a} < 0`, txt: `S${a} ${fmtS(s(a))} < 0`, ok: s(a) < 0};
+  if (kind === 'gt0') return {sym: `S${a} > 0`, txt: `S${a} ${fmtS(s(a))} > 0`, ok: s(a) > 0};
+  if (kind === 'gtabs') return {sym: `S${a} > |S${b}|`, txt: `S${a} ${fmtS(s(a))} > |S${b}| ${fmtS(Math.abs(s(b)))}`, ok: s(a) > Math.abs(s(b))};
+  const r = s(a) / (s(a) + s(b));
+  return {sym: `S${a}/(S${a}+S${b}) > ${RULE_RATIO}`, txt: `S${a}/(S${a}+S${b}) = ${fmtS(s(a))}/${fmtS(s(a) + s(b))} = ${Number.isFinite(r) ? r.toFixed(3) : 'NaN'} > ${RULE_RATIO}`, ok: Number.isNaN(r) ? null : r > RULE_RATIO};
+}
+/** R's `&` over the clauses: FALSE if any is FALSE, else NA if any is NA (if() would stop), else TRUE. */
+const andR = (oks) => (oks.includes(false) ? false : oks.includes(null) ? null : true);
+const T_HEAD = 'This decision has been made based on the assumption that the QT-interval is considered normal when the area under the T-wave contains cool pseudo-colours (purple to blue to green), and prolonged with risk of TdP when it contains warm pseudo-colours (yellow to orange to red).';
+const T_TAIL = 'Based on the pseudo-colouring scale, the estimated value of the QT-interval ranges from';
+export const RULES = RULE_DATA.map(([id, need, pred, grade, lo, hi, lead, body]) => ({
+  id, need, pred, grade, lo, hi, lead, body,
+  cond: need.map((c) => clause(c, 0, [0, 0, 0, 0, 0, 0, 0]).sym).join(' & '),
+  test: (ip, S) => andR(need.map((c) => clause(c, ip, S).ok)),
+}));
 
 export function ruleBank(ip, S, qtNom, hr) {
-  const s5 = S.slice(0, 5);
-  const open = RULES.map((r) => (ip === null ? false : !!r.test(ip, s5)));
+  // every gate is evaluated here so the console can show it; script 3 stops at the first TRUE (`next`)
+  const res = RULES.map((r) => r.test(ip, S));
+  const open = res.map((v) => v === true);
   const w = open.indexOf(true);
-  if (w < 0) return {open, winner: -1, pred: null, grade: null, window: null, text: null};
+  const na = res.findIndex((v) => v === null);
+  const stopsNA = na >= 0 && (w < 0 || na < w); // if (NA) stops R with an error before any rule fires
+  const clauses = RULES.map((r) => r.need.map((c) => clause(c, ip, S)));
+  if (w < 0 || stopsNA) return {open, res, clauses, winner: -1, stopsNA, pred: null, grade: null, window: null, text: null};
   const r = RULES[w];
   const window = [qtNom + r.lo, qtNom + r.hi];
   const text = `${r.lead} ${T_HEAD} ${r.body} ${T_TAIL} ${window[0]} to ${window[1]} ms, and the HR is ${Math.round(hr)}`;
-  return {open, winner: w, rule: r, pred: r.pred, grade: r.grade, window, text};
+  return {open, res, clauses, winner: w, stopsNA, rule: r, pred: r.pred, grade: r.grade, window, text};
 }
 
 // ------------------------------------------------------------------------------------------------ the C5.0 bench

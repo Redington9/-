@@ -12,7 +12,8 @@ at 60 bpm, the beat repeated 10× across a 10 s strip). Every part, panel and la
 | `model.js` | The pipeline as pure functions, implemented as the R code is written (not as its comments say). |
 | `check.mjs` | `node check.mjs` prints the hand check and the q sweep from the same model. |
 | `machine.js`, `stage.js` | The 3D parts and how `run(q)` poses them. |
-| `console.js`, `notes.js` | Panels, callouts, warnings, the hand-check and code-notes overlays. |
+| `console.js` | The 1600×900 console: live QT and verdict, the pseudo-coloured ECG with the 10 s strip, QT ruler, hopper bars, S1–S7 with m and IP, the 2D schematic, subsystem buttons (isolate / cut / alone), camera buttons, the explanation and the fired rule with its numbers. |
+| `notes.js` | Callouts with live values, the six warnings (amber callouts) and the other code findings. |
 | `tour.js`, `live.js` | The auto tour and the page you drive. |
 
 Not from the attached files, and labelled on screen:

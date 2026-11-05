@@ -1,56 +1,74 @@
-// The auto tour: a SCRIPT of operator moves (focus a subsystem, toggle a display, drag q) and pure functions of the
-// tour time for each. The live page plays it when left alone; any input hands control to the visitor.
-export const VIEWS = {
-  all: {tx: 1.7, ty: 0.9, tz: -0.6, az: -6, el: 24, d: 32},
-  feeder: {tx: 0, ty: 3.6, tz: -3.3, az: 0, el: 10, d: 12.5},
-  rpeak: {tx: -2.6, ty: 3.85, tz: -3.3, az: -8, el: 8, d: 6.2},
-  gov: {tx: -6.35, ty: 1.0, tz: -1.0, az: 0, el: 12, d: 6.0},
-  nomo: {tx: -6.6, ty: 1.45, tz: 0.95, az: 8, el: 6, d: 6.2},
-  paint: {tx: -0.7, ty: 1.85, tz: -1.75, az: 0, el: 6, d: 10.5},
-  ruler: {tx: -0.35, ty: 0.15, tz: -1.5, az: 0, el: 44, d: 8.0},
-  integ: {tx: 0, ty: 0.35, tz: -1.05, az: -18, el: 30, d: 6.2},
-  hoppers: {tx: 0, ty: 0.9, tz: -0.45, az: 0, el: 12, d: 9.2},
-  dgears: {tx: 0, ty: 0.55, tz: 0.45, az: 0, el: 12, d: 6.2},
-  sgears: {tx: 0, ty: 0.55, tz: 1.15, az: 0, el: 14, d: 6.2},
-  ipsel: {tx: 0.2, ty: 0.15, tz: 1.45, az: 0, el: 46, d: 6.4},
-  gates: {tx: 4.75, ty: 0.3, tz: 0.2, az: -6, el: 28, d: 7.4},
-  output: {tx: 4.85, ty: 0.85, tz: 1.75, az: -4, el: 8, d: 5.6},
-  c50: {tx: 8.5, ty: 0.5, tz: 0.5, az: -28, el: 24, d: 7.2},
-};
-// the viewport's centre sits right of the left panels and above the bottom panel
-export const VIEW_SHIFT = {sx: 0, sy: -40};
+// Cameras and the auto tour. SUB_VIEWS frame each subsystem when its button is pressed; CAMS are the five named
+// camera buttons. SCRIPT is the operator's tour (focus a subsystem, pick isolate / cut / alone, switch camera, toggle a
+// display, drag q) and every value the tour sets is a pure function of the tour time.
+import {GATE} from './machine.js';
 
-// {t, focus} clicks a subsystem button; {t, display, on} a toggle; {t, q: [from, to, dur]} drags the q slider
+export const SUB_VIEWS = {
+  feeder: {tx: 0, ty: 3.6, tz: -3.3, az: 0, el: 10, d: 15},
+  rpeak: {tx: -2.6, ty: 3.85, tz: -3.3, az: -8, el: 8, d: 7.4},
+  gov: {tx: -6.35, ty: 1.0, tz: -1.0, az: 0, el: 12, d: 7.0},
+  nomo: {tx: -6.5, ty: 1.45, tz: 0.95, az: 8, el: 6, d: 7.2},
+  paint: {tx: -0.7, ty: 1.85, tz: -1.75, az: 0, el: 6, d: 12.5},
+  ruler: {tx: -0.1, ty: 0.15, tz: -1.5, az: 0, el: 44, d: 9.4},
+  integ: {tx: 0, ty: 0.35, tz: -1.05, az: -18, el: 30, d: 7.4},
+  hoppers: {tx: 0, ty: 0.9, tz: -0.45, az: 0, el: 12, d: 10.8},
+  dgears: {tx: 0, ty: 0.55, tz: 0.45, az: 0, el: 12, d: 7.4},
+  sgears: {tx: 0, ty: 0.55, tz: 1.15, az: 0, el: 14, d: 7.4},
+  ipsel: {tx: 0.2, ty: 0.15, tz: 1.45, az: 0, el: 46, d: 7.6},
+  gates: {tx: 4.85, ty: 0.3, tz: 0.2, az: -6, el: 28, d: 8.6},
+  output: {tx: 4.85, ty: 0.85, tz: 1.75, az: -4, el: 8, d: 6.6},
+  c50: {tx: 8.5, ty: 0.5, tz: 0.5, az: -28, el: 24, d: 8.4},
+};
+// the camera buttons
+export const CAMS = {
+  hero: {label: 'HERO', v: {tx: 1.4, ty: 0.7, tz: -0.4, az: -32, el: 27, d: 34}},
+  front: {label: 'FRONT', v: {tx: -0.8, ty: 2.6, tz: -2.4, az: -16, el: 9, d: 17}},
+  side: {label: 'SIDE', v: {tx: 0.2, ty: 0.55, tz: 0.8, az: -74, el: 13, d: 7.2}},
+  top: {label: 'TOP', v: {tx: 0, ty: 0, tz: -0.95, az: 0, el: 88, d: 8.6}},
+  inside: {label: 'INSIDE GATES', v: {tx: GATE.x0 + 2.6, ty: 0.32, tz: GATE.z - 0.05, az: -90, el: 7, d: 3.4}},
+};
+export const CAM_KEYS = Object.keys(CAMS);
+export const MODES = ['isolate', 'cut', 'alone'];
+// the viewport's centre: x 800 between the side columns, y 431 between the top band and the bottom band
+export const VIEW_SHIFT = {sx: 0, sy: -19};
+
+// {t, focus} presses a subsystem button ('all' releases it); {t, mode}; {t, cam}; {t, display, on}; {t, q: [a, b, s]}
 export const SCRIPT = [
-  {t: 0.0, focus: 'all'},
-  {t: 4.5, focus: 'feeder'},
-  {t: 9.5, focus: 'rpeak'},
-  {t: 15.0, focus: 'gov'},
-  {t: 20.0, focus: 'nomo'},
-  {t: 25.0, focus: 'paint'},
-  {t: 31.0, focus: 'ruler'},
-  {t: 36.5, focus: 'integ'},
-  {t: 41.5, focus: 'hoppers'},
-  {t: 46.5, focus: 'dgears'},
-  {t: 51.5, focus: 'sgears'},
-  {t: 57.0, focus: 'ipsel'},
-  {t: 58.6, q: [440, 250, 3.2]},
-  {t: 64.0, q: [250, 330, 2.0]},
-  {t: 69.5, focus: 'gates'},
-  {t: 71.0, q: [330, 540, 12.0]},
-  {t: 85.0, focus: 'output'},
-  {t: 86.4, q: [540, 440, 2.4]},
-  {t: 91.5, focus: 'c50'},
-  {t: 97.5, focus: 'all'},
-  {t: 98.6, display: 'exploded', on: 1},
-  {t: 99.8, display: 'orbit', on: 1},
-  {t: 101.0, q: [440, 240, 4.0]},
-  {t: 106.0, q: [240, 540, 9.0]},
-  {t: 116.5, display: 'exploded', on: 0},
-  {t: 117.5, display: 'orbit', on: 0},
-  {t: 118.6, q: [540, 440, 2.4]},
+  {t: 0.0, cam: 'hero'},
+  {t: 4.0, cam: 'front'},
+  {t: 8.5, focus: 'rpeak'},
+  {t: 13.0, focus: 'gov'},
+  {t: 17.5, focus: 'nomo'},
+  {t: 22.0, focus: 'paint'},
+  {t: 27.0, focus: 'integ'},
+  {t: 28.4, mode: 'cut'},
+  {t: 33.0, focus: 'hoppers'},
+  {t: 34.4, mode: 'isolate'},
+  {t: 38.0, focus: 'all'},
+  {t: 39.0, cam: 'top'},
+  {t: 44.0, cam: 'side'},
+  {t: 49.5, focus: 'ipsel'},
+  {t: 50.8, mode: 'alone'},
+  {t: 52.0, q: [440, 250, 3.2]},
+  {t: 57.0, q: [250, 330, 2.0]},
+  {t: 62.0, focus: 'all'},
+  {t: 62.6, mode: 'isolate'},
+  {t: 63.4, cam: 'inside'},
+  {t: 65.0, q: [330, 540, 11.0]},
+  {t: 78.0, focus: 'output'},
+  {t: 79.4, q: [540, 440, 2.4]},
+  {t: 84.0, focus: 'c50'},
+  {t: 85.4, mode: 'cut'},
+  {t: 90.5, focus: 'all'},
+  {t: 91.2, mode: 'isolate'},
+  {t: 92.0, cam: 'hero'},
+  {t: 93.0, display: 'exploded', on: 1},
+  {t: 94.4, q: [440, 240, 4.0]},
+  {t: 99.0, q: [240, 540, 9.0]},
+  {t: 109.5, display: 'exploded', on: 0},
+  {t: 110.6, q: [540, 440, 2.4]},
 ];
-export const DURATION = 123;
+export const DURATION = 116;
 
 const smoother = (x) => {
   const u = Math.min(1, Math.max(0, x));
@@ -58,38 +76,32 @@ const smoother = (x) => {
 };
 const ss = (a, b, t) => smoother((t - a) / (b - a));
 
-export const focusAt = (t) => {
-  let f = 'all';
-  let t0 = 0;
-  for (const e of SCRIPT) if (e.focus && e.t <= t) [f, t0] = [e.focus, e.t];
-  return [f, t0];
-};
-export const displayAt = (t) => {
-  const d = {labels: 1, glass: 0, exploded: 0, orbit: 0, check: 0, notes: 0};
-  const since = {};
-  for (const e of SCRIPT)
-    if (e.display && e.t <= t) {
-      d[e.display] = e.on;
-      since[e.display] = e.t;
-    }
-  return {d, since};
-};
-export const qAt = (t) => {
-  let q = 440;
+/** The tour's state at time t: focus, mode, camera (a CAMS key, or 'sub' to frame the focus), displays, q, and when each changed. */
+export function tourAt(t) {
+  const st = {focus: 'all', focusT: 0, mode: 'isolate', cam: 'hero', camT: 0, q: 440, d: {labels: 1, glass: 0, exploded: 0, orbit: 0, check: 0, notes: 0}};
   for (const e of SCRIPT) {
-    if (!e.q || e.t > t) continue;
-    const [a, b, dur] = e.q;
-    q = a + (b - a) * ss(e.t, e.t + dur, t);
+    if (e.t > t) break;
+    if (e.focus) {
+      st.focus = e.focus;
+      st.focusT = e.t;
+      if (e.focus !== 'all') [st.cam, st.camT] = ['sub', e.t];
+    }
+    if (e.mode) st.mode = e.mode;
+    if (e.cam) [st.cam, st.camT] = [e.cam, e.t];
+    if (e.display) st.d[e.display] = e.on;
+    if (e.q) {
+      const [a, b, dur] = e.q;
+      st.q = a + (b - a) * ss(e.t, e.t + dur, t);
+    }
   }
-  return q;
-};
+  return st;
+}
 
 // The operator's cursor: travels to each button or the slider knob, presses, and rests between moves.
 export function makeCursor(ui) {
   const EV = SCRIPT.filter((e) => e.t > 0).map((e) => {
-    if (e.focus) return {t: e.t, spot: ui.spots[e.focus]};
-    if (e.display) return {t: e.t, spot: ui.spots[e.display]};
-    return {t: e.t, ramp: e.q};
+    const k = e.focus ?? e.mode ?? (e.cam ? 'cam_' + e.cam : e.display);
+    return e.q ? {t: e.t, ramp: e.q} : {t: e.t, spot: ui.spots[k]};
   });
   const REST = [[900, 640], [760, 600], [1020, 660], [700, 690]];
   const posOf = (e, t) => (e.ramp ? ui.knobAt(e.ramp[0] + (e.ramp[1] - e.ramp[0]) * ss(e.t, e.t + e.ramp[2], t)) : e.spot);
@@ -101,7 +113,6 @@ export function makeCursor(ui) {
     const e = EV[i];
     const prev = i > 0 ? EV[i - 1] : null;
     const restP = REST[i % REST.length];
-    // where it was: resting after the previous move, or on it still
     const from = prev ? (t - 0.9 > endOf(prev) + 1.2 ? restP : posOf(prev, endOf(prev))) : REST[0];
     const at = posOf(e, Math.max(e.t, t));
     let x;
