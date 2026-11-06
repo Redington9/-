@@ -4,7 +4,7 @@
 //   right column   05 schematic of the pipeline · 06 subsystem buttons with isolate / cut / alone
 //   bottom band    q dial and display toggles · the generated explanation · the fired rule with its numbers
 // Every panel redraws from the frame's state (res = run(q)); every number comes from the model or its constants.
-import {BEAT, BINS, C50, GREY, LIFT, LOUPE_BEAT, N, NOMOGRAM, PAINT_LEAD, Q_RANGE, run, RULES, S_NAMES, SAMPLE_MS, SQUARE, STRIP_S, beatAt, R_KEEP, FLAT_MIN, RR_DROP, RR_MIN, RR_MAX, HR_FAST, UPPER_SQ, LOWER_SQ, FAST_SQ, PAPER_SPEED, RULE_RATIO} from './model.js';
+import {BEAT, BINS, C50, GREY, LIFT, LOUPE_BEAT, N, NOMOGRAM, PAINT_LEAD, Q_RANGE, run, RULES, S_NAMES, SAMPLE_MS, SQUARE, STRIP_S, beatAt, R_KEEP, FLAT_MIN, RR_DROP, RR_MIN, RR_MAX, HR_FAST, UPPER_SQ, LOWER_SQ, FAST_SQ, PAPER_SPEED, RULE_RATIO, roundR} from './model.js';
 import {ACC, INK, SCALE} from './machine.js';
 import {EXTRA, f1, firedText, GRADES, HR_HI, HR_LO, SUB, SUBS, WARN} from './notes.js';
 import {CAM_KEYS, CAMS, MODES} from './tour.js';
@@ -478,7 +478,7 @@ export function createConsole(app) {
 // Every number below is computed from model.js or read from its constants; the areas are also checked against an
 // independent integral of the beat function (a midpoint sum aligned to the samples each trapezoid spans).
 function handCheckHTML() {
-  const q0 = NOMOGRAM.lookup();
+  const q0 = roundR(NOMOGRAM.lookup(60000 / BEAT.rr));
   const r = run(q0);
   const A = r.integ.A;
   const S = r.inf.S;
@@ -504,7 +504,7 @@ function handCheckHTML() {
   const pw = Math.max(0, r.out.winner - 1);
   return `<span class="x mo">✕ CLOSE</span>
   <h2>Hand check</h2>
-  <p>Worked at q = ${q0} ms (on the placeholder nomogram line), then at the two q where warnings ⚠1 and ⚠2 fire. Green: the hand number matches the machine.</p>
+  <p>Worked at q = ${q0} ms (on the nomogram line at the beat’s HR), then at the two q where warnings ⚠1 and ⚠2 fire. Green: the hand number matches the machine.</p>
   <h3>1 · STRIP, PEAKS, RR, HR</h3><table>
   <tr><td>samples</td><td>${STRIP_S} s ÷ ${SAMPLE_MS} ms = ${(STRIP_S * 1000) / SAMPLE_MS}</td><td>${ok(r.raw.length, r.raw.length === (STRIP_S * 1000) / SAMPLE_MS)}</td></tr>
   <tr><td>R peak, raw</td><td>${B.r.amp} + (${B.q.amp})·e<sup>−${eq(B.q)}</sup> + (${B.s.amp})·e<sup>−${eq(B.s)}</sup> − ${LIFT} = ${f3(rawHand)} mV ≥ ${R_KEEP}</td><td>${ok(f3(r.det.kept[0].mv), Math.abs(r.det.kept[0].mv - rawHand) < 1e-3)}</td></tr>
@@ -512,6 +512,7 @@ function handCheckHTML() {
   <tr><td>HR</td><td>${r.gov.kept.length} RR of ${rr} ms in ${RR_MIN}–${RR_MAX} → 60000 / ${rr}</td><td>${ok(r.gov.hr.toFixed(1), r.gov.hr === 60000 / B.rr)}</td></tr>
   <tr><td>HR window</td><td>60000/${RR_MAX} = ${HR_LO} · 60000/${RR_MIN} = ${HR_HI} bpm</td><td>${ok(`${HR_LO}–${HR_HI}`, true)}</td></tr></table>
   <h3>2 · NOMOGRAM, PAINT, RULER</h3><table>
+  <tr><td>nomogram</td><td>which.min(|HR_nomogram − ${r.gov.hr}|) → row ${r.nom.row.index} (Excel row ${r.nom.row.excelRow}): HR ${r.nom.row.hr.toFixed(3)}, QT_pred ${r.nom.row.qtPred} → round</td><td>${ok(r.nom.qt, r.nom.qt === roundR(r.nom.row.qtPred))}</td></tr>
   <tr><td>limits</td><td>upper ${r.nom.qt} + ${UPPER_SQ}·${SQUARE} · lower ${r.nom.qt} − ${LOWER_SQ}·${SQUARE} · HR ${r.gov.hr} ${r.gov.hr >= HR_FAST ? '≥' : '<'} ${HR_FAST}, so paint to ${r.gov.hr >= HR_FAST ? `QT_nom + ${FAST_SQ * SQUARE}` : 'upper'}</td><td>${ok(`${r.nom.upper} / ${r.nom.lower} / ${r.nom.maxPaint}`, r.nom.upper === r.nom.qt + UPPER_SQ * SQUARE && r.nom.lower === r.nom.qt - LOWER_SQ * SQUARE)}</td></tr>
   <tr><td>paint start</td><td>R at ${R0} → index ${R0 - PAINT_LEAD}; sample ${R0 - PAINT_LEAD + 1} gets 1, sample ${R0} (the R peak) gets ${PAINT_LEAD}</td><td>${ok(`${r.paint[R0 - PAINT_LEAD]} · ${r.paint[R0 - 1]}`, r.paint[R0 - PAINT_LEAD] === 1 && r.paint[R0 - 1] === PAINT_LEAD)}</td></tr>
   <tr><td>paint end</td><td>sample ${R0 - PAINT_LEAD + r.nom.maxPaint} gets ${r.nom.maxPaint}, the next one ${GREY} (grey)</td><td>${ok(`${r.paint[R0 - PAINT_LEAD + r.nom.maxPaint - 1]} · ${r.paint[R0 - PAINT_LEAD + r.nom.maxPaint]}`, r.paint[R0 - PAINT_LEAD + r.nom.maxPaint] === GREY)}</td></tr>
@@ -528,7 +529,7 @@ function handCheckHTML() {
   <tr><td>IP</td><td>branches fired for m = ${m}: ${r.inf.fired.map((b) => b.val).join(' → ')}</td><td>${ok(`IP ${r.inf.ip}`, r.inf.ip !== null)}</td></tr>
   <tr><td>${RULES[pw].id}</td><td>the gate just before: ${r.out.clauses[pw].map((c) => `${c.txt} ${c.ok ? '✓' : '✗'}`).join(' & ')}</td><td>${ok(r.out.res[pw] ? 'open' : 'shut', !r.out.res[pw])}</td></tr>
   <tr><td>${r.out.rule.id}</td><td>${firedText(r)} → ${r.out.pred}, grade ${r.out.grade}, ${r.nom.qt}${sgn(r.out.rule.lo)}${Math.abs(r.out.rule.lo)} … ${r.nom.qt}${sgn(r.out.rule.hi)}${Math.abs(r.out.rule.hi)}</td><td>${ok(`${r.out.window.join('–')}`, true)}</td></tr></table>
-  <p>q = ${q0} sits on the placeholder nomogram line, yet ${r.out.rule.id} puts the QT at ${r.out.window.join('–')} ms. That is what the code does with this invented beat; it says nothing about real ECGs.</p>
+  <p>q = ${q0} sits on the nomogram line, yet ${r.out.rule.id} puts the QT at ${r.out.window.join('–')} ms. That is what the code does with this invented beat; it says nothing about real ECGs.</p>
   <h3>5 · THE WARNINGS AT WORK</h3><table>
   <tr><td>q = ${qa1.q} ⚠1</td><td>m = ${qa1.inf.m}; branches ${qa1.inf.fired.map((b) => b.val).join(' then ')}: the later one overwrites</td><td>${ok(`IP ${qa1.inf.ip}`, qa1.inf.overwritten)}</td></tr>
   <tr><td></td><td>${firedText(qa1)}</td><td>${ok(qa1.out.rule.id, true)}</td></tr>
@@ -537,7 +538,7 @@ function handCheckHTML() {
   <tr><td>the code</td><td>lift ${LIFT}, flat-top ${FLAT_MIN} and keep ${R_KEEP} mV, drop ${RR_DROP} ms, RR ${RR_MIN}–${RR_MAX} ms, lead ${PAINT_LEAD} ms, grey ${GREY}, bins ${SQUARE} ms, limits +${UPPER_SQ}/−${LOWER_SQ} squares, HR ${HR_FAST}, ratio ${RULE_RATIO} and the ${RULES.length} rules</td></tr>
   <tr><td>ECG paper</td><td>${PAPER_SPEED} mm/s: 1 mm = ${1000 / PAPER_SPEED} ms, one small square</td></tr>
   <tr><td>1 sample = ${SAMPLE_MS} ms</td><td>assumed, as the code assumes it (sample gaps read as ms in RR and 60000/RR); holds only for a 1 kHz recorder</td></tr>
-  <tr><td class="no">placeholder</td><td>QT_nom = ${q0} ms for every HR (${NOMOGRAM.source})</td></tr>
+  <tr><td>QTnomogram.xlsx</td><td>QT_nom: the first row nearest HR ${r.gov.hr} is Excel row ${r.nom.row.excelRow} (HR ${r.nom.row.hr.toFixed(2)}, QT_pred ${r.nom.row.qtPred}) → round → ${r.nom.qt} ms (${NOMOGRAM.source})</td></tr>
   <tr><td class="no">the brief</td><td>HR fixed by RR ${B.rr} ms; q from QT_nom ${Q_RANGE[0] - q0} to +${Q_RANGE[1] - q0}</td></tr>
   <tr><td class="no">invented</td><td>beat: P ${B.p.amp}, Q ${B.q.amp}, R ${B.r.amp}, S ${B.s.amp}, T ${B.t.amp} mV, T lasting ${B.t.durK}·q</td></tr>
   <tr><td class="no">not available</td><td>C5.0 thresholds (UnbalancedData.xlsx not attached)</td></tr></table>`;

@@ -2,7 +2,7 @@
 // the schematic) frames that part and applies the mode: ISOLATE fades the rest, CUT also slices the part open, ALONE
 // hides the rest. The camera buttons give the named views. Left alone it plays the tour with the operator's cursor;
 // a click, drag, wheel or key hands control over, 25 s of quiet hands it back.
-import {Q_RANGE, run} from './model.js';
+import {Q_RANGE, QT_NOM, run} from './model.js';
 import {createConsole, DISPLAY} from './console.js';
 import {callouts} from './notes.js';
 import {createStage} from './stage.js';
@@ -78,7 +78,7 @@ export function runLive() {
 
   // ------------------------------------------------------------ state
   let T = 0;
-  let q = 440;
+  let q = QT_NOM;
   let focus = 'all';
   let focusT = 0;
   let mode = 'isolate';

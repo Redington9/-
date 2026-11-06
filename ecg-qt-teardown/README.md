@@ -9,6 +9,7 @@ at 60 bpm, the beat repeated 10× across a 10 s strip). Every part, panel and la
 
 | File | Job |
 |---|---|
+| `nomogram.js` | `QTnomogram.xlsx` Sheet1 (HR, QT_pred, 154 rows), copied verbatim. At the beat's HR 60 the nearest row is Excel row 16 (HR 59.53) → QT_nom = 484 ms. |
 | `model.js` | The pipeline as pure functions, implemented as the R code is written (not as its comments say). |
 | `check.mjs` | `node check.mjs` prints the hand check and the q sweep from the same model. |
 | `machine.js`, `stage.js` | The 3D parts and how `run(q)` poses them. |
@@ -17,7 +18,6 @@ at 60 bpm, the beat repeated 10× across a 10 s strip). Every part, panel and la
 | `tour.js`, `live.js` | The auto tour and the page you drive. |
 
 Not from the attached files, and labelled on screen:
-- **QT_nom = 440 ms is a placeholder.** The code reads it from `QTnomogram.xlsx`, which was not attached.
 - **The beat's shape is invented** (P, QRS and T curves and amplitudes).
 - **The C5.0 splits are not available.** They are learned from `UnbalancedData.xlsx`, which was not attached.
 

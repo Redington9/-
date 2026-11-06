@@ -1,11 +1,14 @@
 // The machine's geometry, built from code, and update(res) that poses every part from run(q). Nothing here keeps its
 // own numbers: positions, fills, angles and textures all come from the model result.
 import * as THREE from 'three';
-import {BINS, GREY, LOUPE_BEAT, LOWER_SQ, N, NOMOGRAM, Q_RANGE, RR_MAX, RR_MIN, run, RULES, SQUARE, UPPER_SQ} from './model.js';
+import {BINS, GREY, LOUPE_BEAT, LOWER_SQ, N, NOMOGRAM, Q_RANGE, QT_NOM, RR_MAX, RR_MIN, run, RULES, SQUARE, UPPER_SQ} from './model.js';
 
 const HR_LO = 60000 / RR_MAX; // the HR window the RR governor allows
 const HR_HI = 60000 / RR_MIN;
 const GRADES = Math.max(...RULES.map((r) => r.grade));
+// the nomogram cam's dial covers the table's HR range
+const CAM_HR = [Math.floor(Math.min(...NOMOGRAM.rows.map((x) => x[0])) / 10) * 10, Math.ceil(Math.max(...NOMOGRAM.rows.map((x) => x[0])) / 10) * 10];
+const camAng = (hr) => ((hr - (CAM_HR[0] + CAM_HR[1]) / 2) / ((CAM_HR[1] - CAM_HR[0]) / 2)) * 2.36;
 
 export const INK = '#1f1c19';
 export const ACC = '#e8336f'; // the one accent: the part doing the work right now
@@ -14,10 +17,13 @@ export const BG = '#efe9df';
 
 // ------------------------------------------------------------------------------------------------ layout (units)
 // The loupe: one beat magnified, x by paint value c, y by lifted mV. The hoppers sit under their colour bins.
-export const LX = (c) => (c - 340) * 0.01125; // 40 ms = 0.45 u
-export const LOUPE = {c0: -40, c1: 600, z: -1.75, y0: 0.45, y1: 3.05, base: 1.0, k: 1.9};
+// the ruler spans QT_NOM - (LOWER_SQ + 1) squares .. QT_NOM + UPPER_SQ squares; x = 0 at its middle
+const RULE_LO = QT_NOM - (LOWER_SQ + 1) * SQUARE;
+const RULE_MID = (RULE_LO + QT_NOM + UPPER_SQ * SQUARE) / 2;
+export const LX = (c) => (c - RULE_MID) * (0.45 / SQUARE); // one bin = 0.45 u
+export const LOUPE = {c0: -SQUARE, c1: QT_NOM + (UPPER_SQ + 2) * SQUARE, z: -1.75, y0: 0.45, y1: 3.05, base: 1.0, k: 1.9};
 export const LY = (v) => LOUPE.base + v * LOUPE.k;
-export const HX = (k) => LX(160 + 40 * k + 20); // hopper k (0-based) under bin k
+export const HX = (k) => LX(RULE_LO + SQUARE * k + SQUARE / 2); // hopper k (0-based) under bin k
 export const DX = (k) => HX(k) + 0.225; // D gear k between hoppers k and k+1
 export const SX = (j) => HX(j + 1); // S gear j (0-based) centred on the middle bin of its three
 export const IPX = (ip) => HX(ip - 0.5) + 0.225; // IP = j + 0.5 sits between S_j and S_j+1
@@ -194,7 +200,7 @@ export function buildMachine() {
     for (const o of [base, spindle]) o.castShadow = true;
     Object.assign(gov, {g, head, arms});
   }
-  // ---------------------------------------------------------------- 4 the nomogram cam (profile unknown: table not attached)
+  // ---------------------------------------------------------------- 4 the nomogram cam (its profile is QTnomogram.xlsx)
   const camTex = canvasTex(512, 512);
   const cam = {};
   {
@@ -237,8 +243,8 @@ export function buildMachine() {
   // ---------------------------------------------------------------- 6 the colour ruler under the loupe
   const rulerTex = canvasTex(2048, 160);
   {
-    const x0 = LX(160);
-    const x1 = LX(520);
+    const x0 = LX(RULE_LO);
+    const x1 = LX(RULE_LO + BINS.length * SQUARE);
     mesh('ruler', new THREE.BoxGeometry(x1 - x0 + 0.1, 0.06, 0.34), body('ruler', '#d6ccbd'), [(x0 + x1) / 2, 0.03, LOUPE.z + 0.22]);
     const face = mesh('ruler', new THREE.PlaneGeometry(x1 - x0 + 0.1, (x1 - x0 + 0.1) * (160 / 2048)), M('ruler', {map: rulerTex.t, roughness: 0.9}), [(x0 + x1) / 2, 0.16, LOUPE.z + 0.2], false);
     face.rotation.x = -1.05;
@@ -246,8 +252,8 @@ export function buildMachine() {
   // ---------------------------------------------------------------- 7 the trapezoid integrator: a housing with 9 chutes
   const integ = {};
   {
-    const x0 = LX(160);
-    const x1 = LX(520);
+    const x0 = LX(RULE_LO);
+    const x1 = LX(RULE_LO + BINS.length * SQUARE);
     const housingMat = M('integ', {color: '#cfc6b8', roughness: 0.7, transparent: true, opacity: 1});
     integ.housingMat = housingMat;
     mesh('integ', new THREE.BoxGeometry(x1 - x0 + 0.1, 0.3, 0.36), housingMat, [(x0 + x1) / 2, 0.15, -1.18]);
@@ -285,7 +291,7 @@ export function buildMachine() {
   {
     const geo = new THREE.ExtrudeGeometry(gearShape(DG.r, 14), {depth: 0.05, bevelEnabled: false});
     geo.translate(0, 0, -0.025);
-    mesh('dgears', new THREE.BoxGeometry(LX(520) - LX(160), 0.06, 0.12), dark('dgears'), [0, 0.03, DG.z - 0.08]);
+    mesh('dgears', new THREE.BoxGeometry(LX(RULE_LO + BINS.length * SQUARE) - LX(RULE_LO), 0.06, 0.12), dark('dgears'), [0, 0.03, DG.z - 0.08]);
     for (let k = 0; k < 8; k++) {
       const g = new THREE.Group();
       g.position.set(DX(k), DG.y, DG.z);
@@ -306,7 +312,7 @@ export function buildMachine() {
   {
     const geo = new THREE.ExtrudeGeometry(gearShape(SG.r, 18), {depth: 0.06, bevelEnabled: false});
     geo.translate(0, 0, -0.03);
-    mesh('sgears', new THREE.BoxGeometry(LX(480) - LX(200) + 0.5, 0.06, 0.12), dark('sgears'), [SX(3), 0.03, SG.z - 0.09]);
+    mesh('sgears', new THREE.BoxGeometry(LX(RULE_LO + (BINS.length - 1) * SQUARE) - LX(RULE_LO + SQUARE) + 0.5, 0.06, 0.12), dark('sgears'), [SX(3), 0.03, SG.z - 0.09]);
     for (let j = 0; j < 7; j++) {
       const g = new THREE.Group();
       g.position.set(SX(j), SG.y, SG.z);
@@ -521,7 +527,7 @@ export function buildMachine() {
       const yb = py(0);
       g.fillRect(px(cv), Math.min(y, yb), step + 0.8, Math.abs(y - yb));
     }
-    // markers: QT_nom (placeholder) and the true q of this synthetic beat
+    // markers: QT_nom and the true q of this synthetic beat
     const vline = (cv, col, dash, label, top) => {
       g.save();
       g.strokeStyle = col;
@@ -593,11 +599,10 @@ export function buildMachine() {
     g.fillRect(0, 0, W, W);
     g.save();
     g.translate(W / 2, W / 2);
-    // HR scale 30..130 bpm round the rim: angle from straight up, -135..+135 degrees
-    for (let hr = 30; hr <= 130; hr += 5) {
-      const a = ((hr - 80) / 50) * 2.36;
+    // HR round the rim, over the nomogram table's HR range: angle from straight up, -135..+135 degrees
+    for (let hr = CAM_HR[0]; hr <= CAM_HR[1]; hr += 5) {
       g.save();
-      g.rotate(a);
+      g.rotate(camAng(hr));
       g.fillStyle = hr >= HR_LO && hr <= HR_HI ? INK : '#b8ae9f';
       g.fillRect(-1.5, -W / 2 + 14, 3, hr % 10 ? 16 : 30);
       if (hr % 20 === 0) {
@@ -610,20 +615,32 @@ export function buildMachine() {
     g.strokeStyle = ACC;
     g.lineWidth = 6;
     g.beginPath();
-    const aa = (hr) => ((hr - 80) / 50) * 2.36 - Math.PI / 2;
+    const aa = (hr) => camAng(hr) - Math.PI / 2;
     g.arc(0, 0, W / 2 - 8, aa(HR_LO), aa(HR_HI));
     g.stroke();
-    // profile unknown
-    g.setLineDash([12, 10]);
-    g.strokeStyle = '#8d8478';
+    // the cam profile: every row of QTnomogram.xlsx, radius from QT_pred, in HR order
+    const qs = NOMOGRAM.rows.map((x) => x[1]);
+    const q0 = Math.min(...qs);
+    const q1 = Math.max(...qs);
+    const rad = (qt) => W * (0.13 + 0.17 * ((qt - q0) / (q1 - q0)));
+    const pts = [...NOMOGRAM.rows].sort((x, y) => x[0] - y[0]);
+    g.fillStyle = 'rgba(31,28,25,.08)';
+    g.strokeStyle = INK;
     g.lineWidth = 3;
     g.beginPath();
-    g.arc(0, 0, W * 0.27, 0, Math.PI * 2);
+    g.moveTo(0, 0);
+    for (const [hr, qt] of pts) g.lineTo(Math.cos(aa(hr)) * rad(qt), Math.sin(aa(hr)) * rad(qt));
+    g.closePath();
+    g.fill();
     g.stroke();
-    g.setLineDash([]);
-    g.fillStyle = '#8d8478';
-    g.font = FONT(700, 22);
-    for (const [s, y] of [['CAM PROFILE', -14], ['NOT ATTACHED', 16]]) g.fillText(s, -g.measureText(s).width / 2, y + 90);
+    const row = res.nom.row;
+    g.fillStyle = ACC;
+    g.beginPath();
+    g.arc(Math.cos(aa(row.hr)) * rad(row.qtPred), Math.sin(aa(row.hr)) * rad(row.qtPred), 9, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#6d6357';
+    g.font = FONT(700, 20);
+    for (const [txt, y] of [[`${NOMOGRAM.rows.length} ROWS`, 150], [`QT ${Math.round(q0)}–${q1}`, 176]]) g.fillText(txt, -g.measureText(txt).width / 2, y);
     g.restore();
     t.needsUpdate = true;
     const p = cam.plate;
@@ -635,7 +652,7 @@ export function buildMachine() {
     p.g.fillText(`QT_nom ${res.nom.qt}`, 22, 58);
     p.g.fillStyle = '#ffb02e';
     p.g.font = FONT(700, 26);
-    if (NOMOGRAM.placeholder) p.g.fillText('PLACEHOLDER · xlsx missing', 22, 104);
+    p.g.fillText(NOMOGRAM.placeholder ? 'PLACEHOLDER · xlsx missing' : `xlsx row ${row.excelRow} · HR ${row.hr.toFixed(2)}`, 22, 104);
     p.t.needsUpdate = true;
   }
   function drawGates(res) {
@@ -766,7 +783,7 @@ export function buildMachine() {
     gov.head.rotation.y = ((o.t || 0) * hr) / 60 * Math.PI * 2 * 0.25;
     gov.arms.forEach((a) => (a.rotation.z = a.userData.sx * swing));
     // nomogram: needle at HR, follower lifted by QT_nom
-    cam.needle.rotation.z = -((hr - 80) / 50) * 2.36;
+    cam.needle.rotation.z = -camAng(hr);
     const fl = 0.2 + (res.nom.qt / 600) * 0.5;
     cam.follower.scale.y = fl;
     cam.follower.position.set(CAM.x, CAM.y + CAM.r + fl / 2, CAM.z);

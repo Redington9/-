@@ -2,6 +2,14 @@
 // camera buttons. SCRIPT is the operator's tour (focus a subsystem, pick isolate / cut / alone, switch camera, toggle a
 // display, drag q) and every value the tour sets is a pure function of the tour time.
 import {GATE} from './machine.js';
+import {Q_RANGE, QT_NOM, run} from './model.js';
+
+// where the tour drags q: the nomogram value, the ends of the range, and the first q where warnings 1 and 2 fire
+const SWEEP = [];
+for (let q = Q_RANGE[0]; q <= Q_RANGE[1]; q++) SWEEP.push(run(q));
+const Q_W1 = (SWEEP.find((r) => r.inf.overwritten) ?? SWEEP[0]).q;
+const Q_W2 = (SWEEP.find((r) => r.inf.skipped) ?? SWEEP[0]).q;
+const [QL, QH] = Q_RANGE;
 
 export const SUB_VIEWS = {
   feeder: {tx: 0, ty: 3.6, tz: -3.3, az: 0, el: 10, d: 15},
@@ -49,24 +57,24 @@ export const SCRIPT = [
   {t: 44.0, cam: 'side'},
   {t: 49.5, focus: 'ipsel'},
   {t: 50.8, mode: 'alone'},
-  {t: 52.0, q: [440, 250, 3.2]},
-  {t: 57.0, q: [250, 330, 2.0]},
+  {t: 52.0, q: [QT_NOM, Q_W1, 3.2]},
+  {t: 57.0, q: [Q_W1, Q_W2, 2.0]},
   {t: 62.0, focus: 'all'},
   {t: 62.6, mode: 'isolate'},
   {t: 63.4, cam: 'inside'},
-  {t: 65.0, q: [330, 540, 11.0]},
+  {t: 65.0, q: [Q_W2, QH, 11.0]},
   {t: 78.0, focus: 'output'},
-  {t: 79.4, q: [540, 440, 2.4]},
+  {t: 79.4, q: [QH, QT_NOM, 2.4]},
   {t: 84.0, focus: 'c50'},
   {t: 85.4, mode: 'cut'},
   {t: 90.5, focus: 'all'},
   {t: 91.2, mode: 'isolate'},
   {t: 92.0, cam: 'hero'},
   {t: 93.0, display: 'exploded', on: 1},
-  {t: 94.4, q: [440, 240, 4.0]},
-  {t: 99.0, q: [240, 540, 9.0]},
+  {t: 94.4, q: [QT_NOM, QL, 4.0]},
+  {t: 99.0, q: [QL, QH, 9.0]},
   {t: 109.5, display: 'exploded', on: 0},
-  {t: 110.6, q: [540, 440, 2.4]},
+  {t: 110.6, q: [QH, QT_NOM, 2.4]},
 ];
 export const DURATION = 116;
 
@@ -78,7 +86,7 @@ const ss = (a, b, t) => smoother((t - a) / (b - a));
 
 /** The tour's state at time t: focus, mode, camera (a CAMS key, or 'sub' to frame the focus), displays, q, and when each changed. */
 export function tourAt(t) {
-  const st = {focus: 'all', focusT: 0, mode: 'isolate', cam: 'hero', camT: 0, q: 440, d: {labels: 1, glass: 0, exploded: 0, orbit: 0, check: 0, notes: 0}};
+  const st = {focus: 'all', focusT: 0, mode: 'isolate', cam: 'hero', camT: 0, q: QT_NOM, d: {labels: 1, glass: 0, exploded: 0, orbit: 0, check: 0, notes: 0}};
   for (const e of SCRIPT) {
     if (e.t > t) break;
     if (e.focus) {

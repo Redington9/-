@@ -36,6 +36,7 @@ export const WARN = [
 ];
 export const EXTRA = [
   {sub: 'ruler', title: `Purple holds ${SQUARE - 1}, not ${SQUARE}`, text: () => `Purple is (QT_nom${LOW_EDGE}, QT_nom${LOW_EDGE + SQUARE}), open at both ends; every other bin is (lo, hi]. So purple counts ${SQUARE - 1} samples per beat, and paint value QT_nom${LOW_EDGE + SQUARE} falls in no hopper. “Every bin holds exactly ${SQUARE}” is true for ${BINS.length - 1} of the ${BINS.length}.`},
+  {sub: 'nomo', title: 'Nomogram HR column out of order', text: () => `QTnomogram.xlsx has ${NOMOGRAM.rows.length} rows; its HR column steps back once (Excel row 33). which.min scans every row, so the lookup is unaffected; a lookup that assumed a sorted column would not be.`},
   {sub: 'gov', title: 'RR loop index 0:(n−1)', text: () => '`for (i in 1:length(R_peaks_time)-1)` is (1:n)−1 = 0:(n−1). The i = 0 pass assigns to index 0, a silent no-op, so the RR list comes out right by accident.'},
   {sub: 'feeder', title: 'Loops use undefined ID and f', text: () => 'Scripts 1 and 2 loop over 1:length(ID) and read myfiles[f]; neither ID nor f is defined, so as written they stop at the first read. The machine runs one pass on one strip.'},
   {sub: 'feeder', title: 'Two parse errors', text: () => 'Script 1 ends with an unmatched `}`. Script 3, rule 10, has a stray `.` after round(HR[i])). R will not parse either file as written.'},
@@ -50,7 +51,7 @@ export const SUBS = [
   {key: 'feeder', label: 'STRIP FEEDER', short: 'FEEDER', code: 'script 1 · read_csv, mv + 0.12', val: (r) => `${nf(r.raw.length)} × ${SAMPLE_MS} ms · +${LIFT} mV`},
   {key: 'rpeak', label: 'R-PEAK DETECTOR', short: 'R PEAKS', code: 'script 1 · findpeaks ×2', val: (r) => `${r.det.kept.length} of ${r.det.candidates.length} ≥ ${R_KEEP} mV`},
   {key: 'gov', label: 'RR GOVERNOR', short: 'RR → HR', code: 'script 1 · RR window, 60000/RR', val: (r) => `RR ${r.gov.rr.toFixed(0)} · HR ${r.gov.hr.toFixed(1)}`},
-  {key: 'nomo', label: 'NOMOGRAM CAM', short: 'NOMOGRAM', code: 'script 1 · nearest HR row', val: (r) => `QT_nom ${r.nom.qt}${PH}`},
+  {key: 'nomo', label: 'NOMOGRAM CAM', short: 'NOMOGRAM', code: 'script 1 · nearest HR row', val: (r) => `QT_nom ${r.nom.qt} · xlsx row ${r.nom.row.excelRow}`},
   {key: 'paint', label: 'PAINT HEAD', short: 'PAINT', code: 'script 1 · colourVector', val: (r) => `1 → ${r.nom.maxPaint} ms`},
   {key: 'ruler', label: 'COLOUR RULER', short: 'RULER', code: 'script 2 · colorcodesValues', val: (r) => `${BINS.length} × ${SQUARE} ms · ${r.ruler.bins[0].lo}–${r.ruler.bins[BINS.length - 1].hi}`},
   {key: 'integ', label: 'TRAPEZOID INTEGRATOR', short: 'TRAPEZOIDS', code: 'script 2 · (|mv_i|+|mv_i+1|)/2', val: (r) => `Σ ${f1(r.integ.A.reduce((a, b) => a + b, 0))} mV·ms`},
@@ -97,8 +98,8 @@ export function callouts(r, ctx) {
   if (on('rpeak', 'front')) warn(3, 'rpeak', [SXp(R[Math.min(2, R.length - 1)]) + 0.45, SY(R_KEEP + LIFT), STRIP.z + 0.02], hero ? -60 : 40, hero ? -46 : 50);
   if (on('gov', 'hero')) add('gov', [GOV.x, 1.75, GOV.z], hero ? -10 : 60, -50, 'RR GOVERNOR', `MEAN RR ${r.gov.rr.toFixed(0)} MS (${r.gov.kept.length} IN ${RR_MIN}–${RR_MAX}) · HR ${r.gov.hr.toFixed(1)}`, focus === 'gov' ? 'acc' : '');
   if (focus === 'gov') add('gov', [GOV.x + 0.4, 0.12, GOV.z], 60, 30, `HR = 60000 / ${r.gov.rr.toFixed(0)}`, `ALLOWED ${HR_LO}–${HR_HI} BPM`);
-  if (on('nomo', 'hero')) add('nomo', [CAM.x, CAM.y + CAM.r + 0.62, CAM.z], hero ? 30 : 70, hero ? 30 : -30, `QT_nom ${r.nom.qt}${PH}`, NOMOGRAM.placeholder ? `${NOMOGRAM.source.toUpperCase()}` : `NEAREST ROW TO HR ${r.gov.hr.toFixed(1)}`, NOMOGRAM.placeholder ? 'warn' : 'acc');
-  if (focus === 'nomo') add('nomo', [CAM.x - 0.3, CAM.y - 0.3, CAM.z + 0.03], -60, 50, `HR ${r.gov.hr.toFixed(1)} → NEAREST ROW`, `UPPER ${r.nom.upper} · LOWER ${r.nom.lower}`);
+  if (on('nomo', 'hero')) add('nomo', [CAM.x, CAM.y + CAM.r + 0.62, CAM.z], hero ? 30 : 70, hero ? 30 : -30, `QT_nom ${r.nom.qt}${PH}`, NOMOGRAM.placeholder ? `${NOMOGRAM.source.toUpperCase()}` : `XLSX ROW ${r.nom.row.excelRow}: HR ${r.nom.row.hr.toFixed(2)} → QT_pred ${r.nom.row.qtPred}`, NOMOGRAM.placeholder ? 'warn' : 'acc');
+  if (focus === 'nomo') add('nomo', [CAM.x - 0.3, CAM.y - 0.3, CAM.z + 0.03], -60, 50, `HR ${r.gov.hr.toFixed(1)} → NEAREST OF ${NOMOGRAM.rows.length} ROWS`, `UPPER ${r.nom.upper} · LOWER ${r.nom.lower}`);
   if (on('paint', 'hero', 'front')) {
     const lim = r.gov.hr >= HR_FAST ? `QT_nom + ${FAST_SQ * SQUARE} (HR ≥ ${HR_FAST})` : `QT_nom + ${UPPER_SQ * SQUARE}`;
     add('paint', [LX(r.nom.maxPaint), LOUPE.y1 + 0.2, LOUPE.z + 0.17], 30, -40, `PAINT ${r.nom.maxPaint} MS`, `= ${lim} · FROM R − ${PAINT_LEAD} MS`, focus === 'paint' ? 'acc' : '');

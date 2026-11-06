@@ -8,6 +8,8 @@
 //   Decision_tree.R                                          C5.0 on the same 6 features (splits not available)
 
 // ------------------------------------------------------------------------------------------------ constants
+import {NOMOGRAM_ROWS} from './nomogram.js';
+
 export const N = 10000; // samples in the strip: 10 s at 1 ms per sample (script 1: length(colourVector) <- 10000)
 export const LIFT = 0.12; // mv <- ECG$mv + 0.12  (script 1)
 export const R_KEEP = 0.7; // DF_Rpeaks$R_mv >= 0.7  (the comment above it says 0.8)
@@ -29,9 +31,27 @@ export const SAMPLE_MS = 1; // 1 sample = 1 ms (10,000 samples for a 10 s strip)
 export const STRIP_S = 10;
 export const LOUPE_BEAT = 4; // the beat the loupe and the ECG chart magnify (1-based)
 
-// UNVERIFIED: the QT nomogram table (QTnomogram.xlsx) is not attached. 440 ms is a labelled placeholder for any HR.
-export const QT_NOM_PLACEHOLDER = 440;
-export const NOMOGRAM = {placeholder: true, source: 'QTnomogram.xlsx (not attached)', lookup: () => QT_NOM_PLACEHOLDER};
+/** R's round(): halves go to the even neighbour (IEC 60559), unlike Math.round. */
+export const roundR = (x) => {
+  const f = Math.floor(x);
+  const d = x - f;
+  return d > 0.5 || (d === 0.5 && f % 2 !== 0) ? f + 1 : f;
+};
+// The nomogram, from QTnomogram.xlsx (nomogram.js). Script 1: index_HR <- which.min(abs(HR_nomogram - HR)), the
+// first row nearest to HR; QT_value <- round(QT_nomogram[index_HR]).
+export const NOMOGRAM = {
+  placeholder: false,
+  source: `QTnomogram.xlsx · Sheet1 · ${NOMOGRAM_ROWS.length} rows`,
+  rows: NOMOGRAM_ROWS,
+  row(hr) {
+    let k = 0;
+    for (let i = 1; i < NOMOGRAM_ROWS.length; i++) if (Math.abs(NOMOGRAM_ROWS[i][0] - hr) < Math.abs(NOMOGRAM_ROWS[k][0] - hr)) k = i;
+    return {index: k + 1, excelRow: k + 2, hr: NOMOGRAM_ROWS[k][0], qtPred: NOMOGRAM_ROWS[k][1]};
+  },
+  lookup(hr) {
+    return this.row(hr).qtPred;
+  },
+};
 
 // The synthetic strip. INVENTED for illustration, not from any file: 10 identical beats, R peaks every 1000 ms
 // (HR 60), P/Q/R/S Gaussian bumps and a T wave that ends exactly q ms after QRS onset (= R - 28 ms).
@@ -46,7 +66,9 @@ export const BEAT = {
   s: {at: 14, amp: -0.2, sd: 5},
   t: {amp: 0.3, durK: 0.42, skew: 1.4}, // T lasts 0.42 q, peaks 61 % of the way through (w^1.4 = 0.5)
 };
-export const Q_RANGE = [QT_NOM_PLACEHOLDER - 200, QT_NOM_PLACEHOLDER + 100]; // 240 .. 540 ms
+// The brief: q swept from QT_nom - 200 to QT_nom + 100, at the fixed HR of the synthetic beat (RR = BEAT.rr)
+export const QT_NOM = roundR(NOMOGRAM.lookup(60000 / BEAT.rr));
+export const Q_RANGE = [QT_NOM - 200, QT_NOM + 100];
 
 // The 9 hoppers in script 2's order (green before lime; script 1's comments put lime before green).
 export const BINS = [
@@ -146,11 +168,12 @@ export function rrGovernor(R) {
 
 // ------------------------------------------------------------------------------------------------ stage 3: nomogram
 export function nomogramCam(hr) {
-  const qt = Math.round(NOMOGRAM.lookup(hr));
+  const row = NOMOGRAM.row(hr);
+  const qt = roundR(row.qtPred);
   const upper = qt + UPPER_SQ * SQUARE; // UpperColourLimit
   const lower = qt - LOWER_SQ * SQUARE; // LowerColourlimit
   const maxPaint = hr >= HR_FAST ? qt + FAST_SQ * SQUARE : upper; // maximumColourVector
-  return {qt, upper, lower, maxPaint};
+  return {qt, upper, lower, maxPaint, row};
 }
 
 // ------------------------------------------------------------------------------------------------ stage 4: paint
