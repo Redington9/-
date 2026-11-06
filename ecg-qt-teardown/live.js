@@ -2,7 +2,7 @@
 // the schematic) frames that part and applies the mode: ISOLATE fades the rest, CUT also slices the part open, ALONE
 // hides the rest. The camera buttons give the named views. Left alone it plays the tour with the operator's cursor;
 // a click, drag, wheel or key hands control over, 25 s of quiet hands it back.
-import {Q_RANGE, QT_NOM, run} from './model.js';
+import {DATA, IP_MODES, Q_RANGE, QT_NOM, run, runReal} from './model.js';
 import {createConsole, DISPLAY} from './console.js';
 import {callouts} from './notes.js';
 import {createStage} from './stage.js';
@@ -79,6 +79,9 @@ export function runLive() {
   // ------------------------------------------------------------ state
   let T = 0;
   let q = QT_NOM;
+  let src = 'syn'; // 'syn': the synthetic beat at q · 'real': ECG idx of the dataset (sorted by QT − nomogram)
+  let idx = DATA.order.length >> 1;
+  let ipMode = 'file';
   let focus = 'all';
   let focusT = 0;
   let mode = 'isolate';
@@ -148,6 +151,19 @@ export function runLive() {
       mode = m;
       focusT = Math.min(focusT, T - 0.2);
     });
+  for (const [b, v] of [['src_syn', 'syn'], ['src_real', 'real']])
+    ui.btn[b].addEventListener('click', () => {
+      takeOver();
+      pulse(b);
+      src = v;
+    });
+  for (const m of IP_MODES)
+    ui.btn['ipm_' + m].addEventListener('click', () => {
+      takeOver();
+      pulse('ipm_' + m);
+      ipMode = m;
+      src = 'real';
+    });
   for (const k of CAM_KEYS)
     ui.btn['cam_' + k].addEventListener('click', () => {
       takeOver();
@@ -160,8 +176,8 @@ export function runLive() {
     if (disp[k].on === on) return;
     disp[k].on = on;
     disp[k].t = T;
-    if (on && k === 'check') Object.assign(disp.notes, {on: 0, t: T});
-    if (on && k === 'notes') Object.assign(disp.check, {on: 0, t: T});
+    // one overlay at a time
+    if (on && ['check', 'notes', 'data'].includes(k)) for (const o of ['check', 'notes', 'data']) if (o !== k) Object.assign(disp[o], {on: 0, t: T});
   };
   for (const k of DISPLAY)
     ui.btn[k].addEventListener('click', () => {
@@ -169,11 +185,12 @@ export function runLive() {
       pulse(k);
       toggle(k);
     });
-  for (const x of [...ui.ovCheck.querySelectorAll('.x'), ...ui.ovNotes.querySelectorAll('.x')])
-    x.addEventListener('click', () => {
+  // overlay close buttons (the dataset overlay is redrawn, so listen on the overlay)
+  for (const ov of [ui.ovCheck, ui.ovNotes, ui.ovData])
+    ov.addEventListener('click', (e) => {
+      if (!e.target.closest('.x')) return;
       takeOver();
-      toggle('check', 0);
-      toggle('notes', 0);
+      for (const o of ['check', 'notes', 'data']) toggle(o, 0);
     });
   {
     const {x: x0, w, y} = ui.QS;
@@ -182,7 +199,9 @@ export function runLive() {
     Object.assign(d.style, {left: `${x0 - 10}px`, top: `${y - 14}px`, width: `${w + 20}px`, height: '30px'});
     const move = (e) => {
       const [x] = toStage(e.clientX, e.clientY);
-      q = Math.round(Q_RANGE[0] + clamp((x - x0) / w, 0, 1) * (Q_RANGE[1] - Q_RANGE[0]));
+      const u = clamp((x - x0) / w, 0, 1);
+      if (src === 'real') idx = Math.round(u * (DATA.order.length - 1));
+      else q = Math.round(Q_RANGE[0] + u * (Q_RANGE[1] - Q_RANGE[0]));
       lastInput = T;
     };
     d.addEventListener('pointerdown', (e) => {
@@ -203,7 +222,9 @@ export function runLive() {
     const k = e.key.toLowerCase();
     if (k === 'arrowleft' || k === 'arrowright') {
       takeOver();
-      q = clamp(Math.round(q) + (k === 'arrowleft' ? -1 : 1) * (e.shiftKey ? 20 : 5), Q_RANGE[0], Q_RANGE[1]);
+      const dir = k === 'arrowleft' ? -1 : 1;
+      if (src === 'real') idx = clamp(idx + dir * (e.shiftKey ? 50 : 1), 0, DATA.order.length - 1);
+      else q = clamp(Math.round(q) + dir * (e.shiftKey ? 20 : 5), Q_RANGE[0], Q_RANGE[1]);
     } else if (k === 'escape') {
       takeOver();
       toggle('check', 0);
@@ -213,6 +234,9 @@ export function runLive() {
     else if (k === 'i') ui.btn.isolate.click();
     else if (k === 'c') ui.btn.cut.click();
     else if (k === 'a') ui.btn.alone.click();
+    else if (k === 'r') ui.btn[src === 'real' ? 'src_syn' : 'src_real'].click();
+    else if (k === 'w') ui.btn[ipMode === 'file' ? 'ipm_code' : 'ipm_file'].click();
+    else if (k === 'd') ui.btn.data.click();
     else if (k === 'l') ui.btn.labels.click();
     else if (k === 'g') ui.btn.glass.click();
     else if (k === 'e') ui.btn.exploded.click();
@@ -284,6 +308,9 @@ export function runLive() {
       mode = ts.mode;
       cam = ts.cam;
       q = ts.q;
+      src = ts.src;
+      idx = ts.idx;
+      ipMode = ts.ipMode;
       for (const k of DISPLAY) if (disp[k].on !== ts.d[k]) Object.assign(disp[k], {on: ts.d[k], t: T});
       cursor = tourCursor(c);
     } else {
@@ -291,7 +318,7 @@ export function runLive() {
       const rk = Math.max(0, 1 - (T - ring.t) / 0.55);
       cursor = {x: -99, y: -99, press: false, ring: rk, ringX: ring.x, ringY: ring.y};
     }
-    const res = run(Math.round(q));
+    const res = src === 'real' ? runReal(DATA.order[Math.round(idx)], ipMode) : run(Math.round(q));
     const fkey = focus === 'all' ? null : focus;
     if (cam === 'sub' && !fkey) cam = 'hero';
     const since = T - focusT;
@@ -313,7 +340,7 @@ export function runLive() {
       return {...c, p: [c.p[0] + o.x, c.p[1] + o.y, c.p[2] + o.z]};
     });
     const display = Object.fromEntries(DISPLAY.map((x) => [x, disp[x].on]));
-    ui.update(res, {focus: fkey, mode, cam, display, labels: eased('labels', 0.4) * ss(0.7, 1.3, Math.min(since, T - camT0())), callouts: calls, project: st.project, cursor});
+    ui.update(res, {focus: fkey, mode, cam, display, idx: Math.round(idx), labels: eased('labels', 0.4) * ss(0.7, 1.3, Math.min(since, T - camT0())), callouts: calls, project: st.project, cursor});
     if (tourChip.classList.contains('on') !== AP.on || !tourChip.firstChild) {
       tourChip.classList.toggle('on', AP.on);
       tourChip.innerHTML = AP.on ? '<i></i>AUTO TOUR · CLICK ANYWHERE TO TAKE OVER' : '▶ RESUME TOUR';
@@ -352,6 +379,9 @@ export function runLive() {
       }
       if (extra.cam) cam = extra.cam;
       if (extra.mode) mode = extra.mode;
+      if (extra.src) src = extra.src;
+      if (extra.idx !== undefined) idx = extra.idx;
+      if (extra.ip) ipMode = extra.ip;
       camAt = T - 5;
       camWas = cam;
       for (const [kk, v] of Object.entries(d)) Object.assign(disp[kk], {on: v, t: T - 5});

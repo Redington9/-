@@ -4,14 +4,14 @@
 //   right column   05 schematic of the pipeline · 06 subsystem buttons with isolate / cut / alone
 //   bottom band    q dial and display toggles · the generated explanation · the fired rule with its numbers
 // Every panel redraws from the frame's state (res = run(q)); every number comes from the model or its constants.
-import {BEAT, BINS, C50, GREY, LIFT, LOUPE_BEAT, N, NOMOGRAM, PAINT_LEAD, Q_RANGE, run, RULES, S_NAMES, SAMPLE_MS, SQUARE, STRIP_S, beatAt, R_KEEP, FLAT_MIN, RR_DROP, RR_MIN, RR_MAX, HR_FAST, UPPER_SQ, LOWER_SQ, FAST_SQ, PAPER_SPEED, RULE_RATIO, roundR} from './model.js';
-import {ACC, INK, SCALE} from './machine.js';
+import {BEAT, BINS, C50, DATA, evaluate, IP_MODES, GREY, LIFT, LOUPE_BEAT, N, NOMOGRAM, PAINT_LEAD, Q_RANGE, run, RULES, S_NAMES, SAMPLE_MS, SQUARE, STRIP_S, beatAt, R_KEEP, FLAT_MIN, RR_DROP, RR_MIN, RR_MAX, HR_FAST, UPPER_SQ, LOWER_SQ, FAST_SQ, PAPER_SPEED, RULE_RATIO, roundR} from './model.js';
+import {ACC, INK, REAL_SCALE, scaleOf, SCALE} from './machine.js';
 import {EXTRA, f1, firedText, GRADES, HR_HI, HR_LO, SUB, SUBS, WARN} from './notes.js';
 import {CAM_KEYS, CAMS, MODES} from './tour.js';
 
 export const C = {ink: INK, mute: '#8d8478', faint: '#d9cdbb', line: '#e6dccd', panel: 'rgba(252,249,244,.95)', acc: ACC, warn: '#b45309', amber: '#d97706', nrm: '#2b7bba', abn: '#cf2a1d', noHop: '#d6cec2', unp: '#a39a8d'};
-export const DISPLAY = ['labels', 'glass', 'exploded', 'orbit', 'check', 'notes'];
-export const DISPLAY_LABEL = {labels: 'LABELS', glass: 'GLASS', exploded: 'EXPLODED', orbit: 'ORBIT', check: 'HAND CHECK', notes: 'CODE NOTES'};
+export const DISPLAY = ['labels', 'glass', 'exploded', 'orbit', 'check', 'notes', 'data'];
+export const DISPLAY_LABEL = {labels: 'LABELS', glass: 'GLASS', exploded: 'EXPLODED', orbit: 'ORBIT', check: 'HAND CHECK', notes: 'CODE NOTES', data: 'DATASET'};
 // the 3D viewport between the columns and bands
 export const VP = {x0: 410, x1: 1190, y0: 100, y1: 764};
 const CSS = `
@@ -133,8 +133,17 @@ export function createConsole(app) {
 
   // ------------------------------------------------------------ bottom band
   add(`<div class="cp" style="left:16px;top:772px;width:384px;height:116px"></div>`);
-  add(`<div class="ph" style="left:28px;top:782px"><i></i>DIAL · q, THE BEAT’S QT</div>`);
-  const QS = {x: 32, w: 352, y: 818};
+  const dialT = add(`<div class="ph" style="left:28px;top:782px"><i></i><span></span></div>`).children[1];
+  // the input source, and for a real ECG which IP to use
+  add(`<div style="position:absolute;left:236px;top:778px;width:152px;height:20px;border-radius:4px;background:#efe6d8"></div>`);
+  btn.src_syn = add(`<div class="bt seg" style="left:238px;top:780px;width:73px;height:16px;font-size:7.6px">SYNTHETIC</div>`);
+  btn.src_real = add(`<div class="bt seg" style="left:313px;top:780px;width:73px;height:16px;font-size:7.6px">REAL ECG</div>`);
+  const ipBox = add(`<div style="position:absolute;left:236px;top:832px;width:152px;height:20px;border-radius:4px;background:#efe6d8"></div>`);
+  const ipLbl = add(`<div class="sm" style="position:absolute;left:186px;top:837px">IP FROM</div>`);
+  btn.ipm_file = add(`<div class="bt seg" style="left:238px;top:834px;width:73px;height:16px;font-size:7.6px">THE FILE</div>`);
+  btn.ipm_code = add(`<div class="bt seg" style="left:313px;top:834px;width:73px;height:16px;font-size:7.6px">AS WRITTEN</div>`);
+  const dialInfo = add(`<div class="mo" style="position:absolute;left:28px;top:799px;width:360px;font-size:8.6px;color:#4a433c;white-space:nowrap;overflow:hidden"></div>`);
+  const QS = {x: 32, w: 352, y: 820};
   add(`<div style="position:absolute;left:${QS.x}px;top:${QS.y}px;width:${QS.w}px;height:3px;background:#efe6d8;border-radius:2px"></div>`);
   const nomTick = add(`<div style="position:absolute;top:${QS.y - 6}px;width:2px;height:15px;background:${C.ink}"></div>`);
   const nomLbl = add(`<div class="sm" style="position:absolute;top:${QS.y - 19}px"></div>`);
@@ -142,7 +151,7 @@ export function createConsole(app) {
   const qKnob = add(`<div class="knob" style="top:${QS.y - 6}px"></div>`);
   const qLo = add(`<div class="sm" style="position:absolute;left:${QS.x}px;top:${QS.y + 9}px"></div>`);
   const qHi = add(`<div class="sm" style="position:absolute;right:${1600 - QS.x - QS.w}px;top:${QS.y + 9}px"></div>`);
-  DISPLAY.forEach((k, i) => (btn[k] = add(`<div class="bt" style="left:${28 + i * 60}px;top:858px;width:56px;font-size:7.6px;letter-spacing:.4px">${DISPLAY_LABEL[k]}</div>`)));
+  DISPLAY.forEach((k, i) => (btn[k] = add(`<div class="bt" style="left:${28 + i * 51.5}px;top:860px;width:49px;font-size:7px;letter-spacing:.2px;padding:0 2px">${DISPLAY_LABEL[k]}</div>`)));
   add(`<div class="cp" style="left:410px;top:772px;width:780px;height:116px"></div>`);
   add(`<div class="ph" style="left:422px;top:782px"><i></i>GENERATED EXPLANATION · paste() IN SCRIPT 3</div>`);
   const expl = add(`<div style="position:absolute;left:422px;top:800px;width:756px;font-size:9.8px;line-height:1.42;color:#3b352f"></div>`);
@@ -153,6 +162,7 @@ export function createConsole(app) {
   // ------------------------------------------------------------ overlays, cursor
   const ovCheck = add(`<div class="ov"></div>`);
   const ovNotes = add(`<div class="ov"></div>`);
+  const ovData = add(`<div class="ov"></div>`);
   ovNotes.innerHTML =
     `<span class="x mo">✕ CLOSE</span><h2>Code notes</h2><p>The six warnings asked for, then the other problems found while building the machine from the code. A warning lights as an amber callout on its part, and as a chip over the viewport when it applies at the current q.</p><h3>WARNINGS</h3>` +
     WARN.map((w) => `<p><b>⚠${w.id} ${w.title}.</b> ${w.text()} <span class="sm">→ ${SUB[w.sub].label}</span></p>`).join('') +
@@ -166,6 +176,9 @@ export function createConsole(app) {
   const center = (n) => [parseFloat(n.style.left) + parseFloat(n.style.width) / 2, parseFloat(n.style.top) + parseFloat(n.style.height || 20) / 2];
   for (const [k, n] of Object.entries(btn)) spots[k] = center(n);
   const knobAt = (q) => [QS.x + ((q - Q_RANGE[0]) / (Q_RANGE[1] - Q_RANGE[0])) * QS.w, QS.y + 1];
+  const knobAtIdx = (k) => [QS.x + (k / (DATA.order.length - 1)) * QS.w, QS.y + 1];
+  // where the sorted ECGs cross the nomogram line
+  const idxNom = DATA.order.findIndex((i) => DATA.rows[i][0] - DATA.rows[i][2] >= 0);
   let onPick = null;
   sch.addEventListener('click', (e) => {
     const g = e.target.closest('[data-k]');
@@ -175,7 +188,7 @@ export function createConsole(app) {
   // ------------------------------------------------------------ per frame
   let lastKey = '';
   const update = (res, s) => {
-    const key = `${res.q}|${s.focus}|${s.mode}|${s.cam}`;
+    const key = `${res.real ? `r${res.real.i}${res.inf.mode}` : res.q}|${s.focus}|${s.mode}|${s.cam}|${s.display.data}`;
     if (key !== lastKey) {
       lastKey = key;
       redraw(res, s);
@@ -187,12 +200,17 @@ export function createConsole(app) {
     for (const k of DISPLAY) btn[k].classList.toggle('on', !!s.display[k]);
     ovCheck.style.display = s.display.check ? 'block' : 'none';
     ovNotes.style.display = s.display.notes && !s.display.check ? 'block' : 'none';
-    const [kx] = knobAt(res.q);
+    ovData.style.display = s.display.data && !s.display.check && !s.display.notes ? 'block' : 'none';
+    btn.src_syn.classList.toggle('on', !res.real);
+    btn.src_real.classList.toggle('on', !!res.real);
+    for (const m of IP_MODES) btn['ipm_' + m].classList.toggle('on', !!res.real && res.inf.mode === m);
+    for (const n of [ipBox, ipLbl, btn.ipm_file, btn.ipm_code]) n.style.opacity = res.real ? 1 : 0.35;
+    const [kx] = res.real ? knobAtIdx(s.idx) : knobAt(res.q);
     qKnob.style.left = `${kx}px`;
     qFill.style.width = `${kx - QS.x}px`;
     let lh = '';
     let ch = '';
-    if (s.labels > 0.01 && !s.display.check && !s.display.notes)
+    if (s.labels > 0.01 && !s.display.check && !s.display.notes && !s.display.data)
       for (const c of s.callouts) {
         const p = s.project(c.p);
         if (!p) continue;
@@ -222,28 +240,42 @@ export function createConsole(app) {
     const dif = Math.round(r.dif);
     // ---------------------------------------------------------------- top band
     big.innerHTML = `<span style="font-size:42px;font-weight:800;letter-spacing:-1.4px">QT ${Math.round(r.q)}</span><span style="font-size:20px;font-weight:700;color:${C.mute}"> ms</span><span style="font-size:20px;font-weight:700;color:${dif > 0 ? C.abn : C.nrm}"> · ${sgn(dif)}${Math.abs(dif)} vs nomogram</span>`;
-    bigSub.textContent = `QT_nom ${r.nom.qt} AT HR ${r.gov.hr.toFixed(1)}${NOMOGRAM.placeholder ? ' · PLACEHOLDER' : ''} · T WAVE ENDS ${Math.round(r.tw.end)} MS AFTER R`;
+    bigSub.textContent = r.real
+      ? `FILE ROW ${r.real.i + 2} · ${r.real.drug === 'NA' ? 'DRUG NA' : r.real.drug.toUpperCase()} · HR ${r.real.hr.toFixed(1)} · QT_nom ${r.nom.qt} (FILE ${r.real.nomV} ${r.real.nomMatches ? '✓' : '✗'})`
+      : `QT_nom ${r.nom.qt} AT HR ${r.gov.hr.toFixed(1)}${NOMOGRAM.placeholder ? ' · PLACEHOLDER' : ''} · T WAVE ENDS ${Math.round(r.tw.end)} MS AFTER R`;
     vPred.textContent = o.pred ? o.pred.toUpperCase() : 'NO VERDICT';
     vPred.style.color = o.pred === 'Abnormal' ? C.abn : o.pred ? C.nrm : C.mute;
     vSub.innerHTML = o.rule
       ? `GRADE ${o.grade} / ${GRADES} · <span style="color:${C.acc}">${o.rule.id}</span> · IP ${r.inf.ip}${r.inf.skipped ? ` · <span style="color:${C.warn}">ROW SKIPPED ⚠2</span>` : ''}`
       : `<span style="color:${C.warn}">${r.inf.unset ? 'IP UNSET ⚠1' : 'NO GATE OPENS'}</span>`;
+    if (r.real) vSub.innerHTML += `<br><span style="color:${r.real.correct ? '#1b7f4b' : C.warn}">FILE SAYS ${r.real.truth.toUpperCase()} THE NOMOGRAM ${r.real.correct === null ? '' : r.real.correct ? '✓ AGREES' : '✗ DISAGREES'}</span>`;
     srcChips.innerHTML = [
       NOMOGRAM.placeholder ? `QT_nom ${r.nom.qt} · PLACEHOLDER` : null,
-      BEAT.invented ? 'BEAT SHAPE INVENTED' : null,
-      `HR ${r.gov.hr.toFixed(0)} · ${BEAT.beats} BEATS`,
+      r.real ? 'STRIP RECONSTRUCTED · AREAS MEASURED' : BEAT.invented ? 'BEAT SHAPE INVENTED' : null,
+      r.real ? `IP ${r.inf.mode === 'file' ? 'AS IN THE FILE' : 'AS SCRIPT 2 IS WRITTEN'}` : `HR ${r.gov.hr.toFixed(0)} · ${r.det.R.length} BEATS`,
       C50.splits ? null : 'C5.0 SPLITS N/A',
     ].filter(Boolean).map((t) => `<span class="chip ph2">${t}</span>`).join('');
     camNote.textContent = s.cam === 'sub' && s.focus ? `FRAMING ${SUB[s.focus].label}` : `${CAMS[s.cam]?.label ?? ''} VIEW`;
     chips.innerHTML = WARN.filter((w) => w.id <= 2 && w.on(r)).map((w) => `<span class="chip"><i>⚠${w.id}</i>${w.short(r)}</span>`).join('');
     // ---------------------------------------------------------------- dial
-    const [nx] = knobAt(r.nom.qt);
+    const [nx] = r.real ? knobAtIdx(idxNom) : knobAt(r.nom.qt);
     nomTick.style.left = `${nx - 1}px`;
-    nomLbl.style.left = `${nx - 30}px`;
-    nomLbl.textContent = `QT_nom ${r.nom.qt}`;
-    qLo.textContent = `${Q_RANGE[0]} = QT_nom ${Q_RANGE[0] - r.nom.qt}`;
-    qHi.textContent = `${Q_RANGE[1]} = +${Q_RANGE[1] - r.nom.qt}`;
-    ecgT.textContent = `PSEUDO-COLOURED ECG · BEAT ${LOUPE_BEAT} OF ${r.det.R.length}`;
+    nomLbl.style.display = 'none';
+    if (r.real) {
+      const o0 = DATA.order[0];
+      const o1 = DATA.order[DATA.order.length - 1];
+      dialT.textContent = `PICK · ECG ${s.idx + 1} OF ${DATA.order.length}`;
+      dialInfo.textContent = `QT ${r.q} · NOMOGRAM ${r.real.nomV} · QT − NOM ${sgn(r.dif)}${Math.abs(r.dif)} · FILE: ${r.real.cat}`;
+      qLo.textContent = `${DATA.rows[o0][0] - DATA.rows[o0][2]} vs NOM`;
+      qHi.textContent = `+${DATA.rows[o1][0] - DATA.rows[o1][2]}`;
+    } else {
+      dialT.textContent = 'DIAL · q, THE BEAT’S QT';
+      dialInfo.textContent = `QT_nom ${r.nom.qt} AT HR ${r.gov.hr.toFixed(1)} (TICK) · ${DATA.order.length} REAL ECGs UNDER REAL ECG`;
+      qLo.textContent = `${Q_RANGE[0]} = QT_nom ${Q_RANGE[0] - r.nom.qt}`;
+      qHi.textContent = `${Q_RANGE[1]} = +${Q_RANGE[1] - r.nom.qt}`;
+    }
+    if (s.display.data) drawData(r);
+    ecgT.textContent = r.real ? `RECONSTRUCTED · BEAT ${LOUPE_BEAT} OF ${r.det.R.length} · FILE ROW ${r.real.i + 2}` : `PSEUDO-COLOURED ECG · BEAT ${LOUPE_BEAT} OF ${r.det.R.length}`;
     drawEcg(r);
     drawRuler(r);
     drawHoppers(r);
@@ -364,6 +396,87 @@ export function createConsole(app) {
   }
 
   // ---------------------------------------------------------------- 03 the hoppers
+  // ---------------------------------------------------------------- the DATASET overlay
+  const EV = {};
+  const evalOf = (m) => (EV[m] ??= evaluate(m));
+  function drawData(r) {
+    const mode = r.real ? r.inf.mode : 'file';
+    const e = {file: evalOf('file'), code: evalOf('code')};
+    const pct = (a, b) => `${((100 * a) / b).toFixed(1)}%`;
+    const conf = (x, name) => {
+      const n = x.tp + x.fp + x.tn + x.fn;
+      return `<table><tr><td>${name}</td><td>file: On/Above</td><td>file: Below</td></tr>
+      <tr><td>rules: Abnormal</td><td class="ok">${x.tp}</td><td class="no">${x.fp}</td></tr>
+      <tr><td>rules: Normal</td><td class="no">${x.fn}</td><td class="ok">${x.tn}</td></tr>
+      <tr><td colspan="3">agreement ${pct(x.tp + x.tn, n)} · sensitivity ${pct(x.tp, x.tp + x.fn)} · specificity ${pct(x.tn, x.tn + x.fp)} · QT inside the rule’s ${SQUARE} ms window ${pct(x.within, n)}</td></tr></table>`;
+    };
+    const ef = e.file;
+    ovData.innerHTML = `<span class="x mo">✕ CLOSE</span><h2>Real dataset</h2>
+    <p>${DATA.source}, de-identified (no ECG or patient IDs, sex or age). ${DATA.rows.length - ef.n} rows have no QT and are left out. The file gives each ECG its nine colour areas, S1–S7, the inflection point and the nomogram label; the raw ECG is not in it, so with REAL ECG the strip is redrawn at that ECG’s QT and HR and the machine runs from the measured areas onward.</p>
+    <h3>WHAT THE FILE CONFIRMS</h3>
+    <p>Nomogram: the lookup from each ECG’s HR gives the file’s NomogramValue for <b>${ef.nomAgree} of ${ef.n}</b>. Second differences: S1–S7 recompute from the file’s areas exactly.</p>
+    <h3>WHAT IT CONTRADICTS</h3>
+    <p>Inflection point: script 2 as written (separate ifs, last true wins) gives the file’s IP for only <b>${ef.ipAgree} of ${ef.n}</b>. The first true branch (else-if logic) gives it for <b>${ef.firstAgree}</b>; the rest are IPs above ${Math.max(...DATA.rows.map((x) => x[15]))} that the file holds at ${Math.max(...DATA.rows.map((x) => x[15]))}. As written, script 2 would also skip (\`next\`) <b>${ef.codeSkips}</b> of these rows, which are in the file. The file was not made by the attached script 2.</p>
+    <h3>THE 10 RULES AGAINST THE FILE’S NOMOGRAM LABEL</h3>
+    <div style="display:flex;gap:18px">${conf(e.file, 'IP AS IN THE FILE')}${conf(e.code, 'IP AS SCRIPT 2 IS WRITTEN')}</div>
+    <p style="color:${C.mute}">Rules used with the file’s IP: ${Object.entries(ef.rules).sort((a, b) => a[0].slice(1) - b[0].slice(1)).map(([k, v]) => `${k} ${v}`).join(' · ')}</p>
+    <h3>HR AGAINST QT · ${mode === 'file' ? 'IP AS IN THE FILE' : 'IP AS WRITTEN'} · LINE: QTnomogram.xlsx</h3>
+    <canvas width="1440" height="560" style="width:720px;height:280px;display:block"></canvas>
+    <p class="mo" style="font-size:9.5px"><span style="color:#9b9285">● Normal, file Below</span> · <span style="color:${C.abn}">● Abnormal, file On/Above</span> · <span style="color:${C.amber}">● Abnormal, file Below</span> · <span style="color:${C.nrm}">● Normal, file On/Above</span>${r.real ? ` · <span style="color:${ACC}">◯ this ECG</span>` : ''}</p>`;
+    const cv = ovData.querySelector('canvas');
+    const g = cv.getContext('2d');
+    g.scale(2, 2);
+    const W = 720;
+    const H = 280;
+    const hrs = DATA.order.map((i) => DATA.rows[i][1]);
+    const qts = DATA.order.map((i) => DATA.rows[i][0]);
+    const x0 = Math.floor(Math.min(...hrs) / 10) * 10;
+    const x1 = Math.ceil(Math.max(...hrs) / 10) * 10;
+    const y0 = Math.floor(Math.min(...qts) / 50) * 50;
+    const y1 = Math.ceil(Math.max(...qts, ...NOMOGRAM.rows.map((x) => x[1])) / 50) * 50;
+    const X = (v) => 40 + ((v - x0) / (x1 - x0)) * (W - 50);
+    const Y = (v) => H - 24 - ((v - y0) / (y1 - y0)) * (H - 34);
+    g.font = '9px JetBrains Mono';
+    g.fillStyle = C.mute;
+    g.strokeStyle = C.line;
+    for (let v = x0; v <= x1; v += 10) {
+      g.beginPath();
+      g.moveTo(X(v), 10);
+      g.lineTo(X(v), H - 24);
+      g.stroke();
+      g.fillText(String(v), X(v) - 8, H - 10);
+    }
+    for (let v = y0; v <= y1; v += 50) {
+      g.beginPath();
+      g.moveTo(40, Y(v));
+      g.lineTo(W - 10, Y(v));
+      g.stroke();
+      g.fillText(String(v), 6, Y(v) + 3);
+    }
+    g.fillText('HR (bpm)', W - 60, H - 2);
+    g.fillText('QT (ms)', 44, 10);
+    const col = ['rgba(155,146,133,.35)', C.abn, C.amber, C.nrm];
+    const cls = e[mode].cls;
+    for (const k of [0, 2, 3, 1])
+      for (const i of DATA.order)
+        if (cls[i] === k) {
+          g.fillStyle = col[k];
+          g.fillRect(X(DATA.rows[i][1]) - 1.2, Y(DATA.rows[i][0]) - 1.2, 2.4, 2.4);
+        }
+    g.strokeStyle = INK;
+    g.lineWidth = 1.6;
+    g.beginPath();
+    [...NOMOGRAM.rows].sort((a, b) => a[0] - b[0]).forEach(([h, q], j) => (j ? g.lineTo(X(h), Y(q)) : g.moveTo(X(h), Y(q))));
+    g.stroke();
+    if (r.real) {
+      g.strokeStyle = ACC;
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(X(r.real.hr), Y(r.real.qt), 6, 0, Math.PI * 2);
+      g.stroke();
+    }
+  }
+
   function drawHoppers(r) {
     const W = 360;
     const bw = (W - 16) / BINS.length;
@@ -373,7 +486,7 @@ export function createConsole(app) {
     r.integ.A.forEach((a, k) => (a > r.integ.A[kmax] ? (kmax = k) : 0));
     r.integ.A.forEach((a, k) => {
       const x = 8 + k * bw;
-      const hh = Math.max(0.8, (a / SCALE.A) * 78);
+      const hh = Math.max(0.8, Math.min(1, a / scaleOf(r).A) * 78);
       h += `<rect x="${x + 4}" y="${base - hh}" width="${bw - 8}" height="${hh}" fill="${BINS[k].col}"${k === kmax ? ` stroke="${ACC}" stroke-width="1.4"` : ''}/>`;
       h += T(x + bw / 2, base - hh - 3, f1(a), {fs: 7.4, a: 'middle', fw: k === kmax ? 700 : 400});
       h += T(x + bw / 2, base + 10, `A${k + 1}`, {fs: 7.4, a: 'middle', fw: 700});
@@ -392,7 +505,7 @@ export function createConsole(app) {
     let h = `<line x1="4" y1="${z}" x2="${W - 4}" y2="${z}" stroke="${C.faint}"/>` + T(W - 4, z - 3, '0', {fs: 7, a: 'end', c: C.mute});
     r.inf.S.forEach((sv, i) => {
       const j = i + 1;
-      const hh = (sv / SCALE.S) * 44;
+      const hh = Math.max(-1, Math.min(1, sv / scaleOf(r).S)) * 44;
       const m = j === r.inf.m;
       h += `<rect x="${X(j) - bw * 0.3}" y="${Math.min(z, z - hh)}" width="${bw * 0.6}" height="${Math.max(0.8, Math.abs(hh))}" fill="${m ? ACC : sv < 0 ? '#c9a27a' : '#9aa0a8'}"/>`;
       h += T(X(j), sv < 0 ? z - hh + 9 : z - hh - 3, f1(sv), {fs: 7.2, a: 'middle', fw: m ? 700 : 400, c: m ? ACC : INK});
@@ -469,7 +582,7 @@ export function createConsole(app) {
     sch.innerHTML = h;
   }
 
-  return {root: ui, btn, spots, knobAt, QS, update, ovCheck, ovNotes, set onPick(f) {
+  return {root: ui, btn, spots, knobAt, knobAtIdx, QS, update, ovCheck, ovNotes, ovData, set onPick(f) {
     onPick = f;
   }};
 }

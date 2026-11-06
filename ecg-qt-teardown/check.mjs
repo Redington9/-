@@ -1,5 +1,5 @@
 // Prints the hand check and the q sweep from the same model the page draws.   node check.mjs
-import {beatAt, QT_NOM, run} from './model.js';
+import {beatAt, evaluate, IP_MODES, QT_NOM, run} from './model.js';
 
 const f = (v, d = 3) => v.toFixed(d);
 const r = run(QT_NOM);
@@ -24,3 +24,12 @@ for (let q = QT_NOM - 200; q <= QT_NOM + 100; q += 10) {
   const x = run(q);
   console.log(String(q).padStart(4), String(x.inf.m).padStart(3), String(x.inf.ip).padStart(4), x.inf.fired.map((b) => b.val).join('>').padEnd(9), (x.out.rule?.id ?? '-').padEnd(5), (x.out.pred ?? '-').padEnd(9), String(x.out.grade).padStart(5), (x.out.window?.join('-') ?? '-').padEnd(9), x.within ? 'yes ' : 'no  ', x.inf.skipped ? 'SKIPPED (next)' : 'written');
 }
+
+console.log('\n--- the real dataset (dataset.js) ---');
+for (const m of IP_MODES) {
+  const e = evaluate(m);
+  const n = e.tp + e.fp + e.tn + e.fn;
+  console.log(`IP ${m === 'file' ? 'as in the file' : 'as script 2 is written'}: n ${n} · TP ${e.tp} FP ${e.fp} TN ${e.tn} FN ${e.fn} · agreement ${((100 * (e.tp + e.tn)) / n).toFixed(1)}% · QT in window ${((100 * e.within) / n).toFixed(1)}%`);
+}
+const e = evaluate('file');
+console.log(`nomogram lookup = file NomogramValue: ${e.nomAgree}/${e.n} · file IP = script 2 as written: ${e.ipAgree} · = first true branch: ${e.firstAgree} · rows script 2 would skip: ${e.codeSkips}`);

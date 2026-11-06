@@ -2,7 +2,7 @@
 // camera buttons. SCRIPT is the operator's tour (focus a subsystem, pick isolate / cut / alone, switch camera, toggle a
 // display, drag q) and every value the tour sets is a pure function of the tour time.
 import {GATE} from './machine.js';
-import {Q_RANGE, QT_NOM, run} from './model.js';
+import {DATA, Q_RANGE, QT_NOM, run} from './model.js';
 
 // where the tour drags q: the nomogram value, the ends of the range, and the first q where warnings 1 and 2 fire
 const SWEEP = [];
@@ -10,6 +10,8 @@ for (let q = Q_RANGE[0]; q <= Q_RANGE[1]; q++) SWEEP.push(run(q));
 const Q_W1 = (SWEEP.find((r) => r.inf.overwritten) ?? SWEEP[0]).q;
 const Q_W2 = (SWEEP.find((r) => r.inf.skipped) ?? SWEEP[0]).q;
 const [QL, QH] = Q_RANGE;
+const IDX_END = DATA.order.length - 1;
+const IDX_MID = DATA.order.length >> 1;
 
 export const SUB_VIEWS = {
   feeder: {tx: 0, ty: 3.6, tz: -3.3, az: 0, el: 10, d: 15},
@@ -75,8 +77,17 @@ export const SCRIPT = [
   {t: 99.0, q: [QL, QH, 9.0]},
   {t: 109.5, display: 'exploded', on: 0},
   {t: 110.6, q: [QH, QT_NOM, 2.4]},
+  // the real dataset: switch the source, sweep the ECGs from far below the nomogram to far above, compare IP modes
+  {t: 114.0, src: 'real'},
+  {t: 115.5, idx: [IDX_MID, 0, 2.0]},
+  {t: 118.5, idx: [0, IDX_END, 12.0]},
+  {t: 131.5, ip: 'code'},
+  {t: 135.0, ip: 'file'},
+  {t: 137.0, display: 'data', on: 1},
+  {t: 142.5, display: 'data', on: 0},
+  {t: 143.5, src: 'syn'},
 ];
-export const DURATION = 116;
+export const DURATION = 146;
 
 const smoother = (x) => {
   const u = Math.min(1, Math.max(0, x));
@@ -86,7 +97,7 @@ const ss = (a, b, t) => smoother((t - a) / (b - a));
 
 /** The tour's state at time t: focus, mode, camera (a CAMS key, or 'sub' to frame the focus), displays, q, and when each changed. */
 export function tourAt(t) {
-  const st = {focus: 'all', focusT: 0, mode: 'isolate', cam: 'hero', camT: 0, q: QT_NOM, d: {labels: 1, glass: 0, exploded: 0, orbit: 0, check: 0, notes: 0}};
+  const st = {focus: 'all', focusT: 0, mode: 'isolate', cam: 'hero', camT: 0, q: QT_NOM, src: 'syn', idx: IDX_MID, ipMode: 'file', d: {labels: 1, glass: 0, exploded: 0, orbit: 0, check: 0, notes: 0, data: 0}};
   for (const e of SCRIPT) {
     if (e.t > t) break;
     if (e.focus) {
@@ -97,6 +108,12 @@ export function tourAt(t) {
     if (e.mode) st.mode = e.mode;
     if (e.cam) [st.cam, st.camT] = [e.cam, e.t];
     if (e.display) st.d[e.display] = e.on;
+    if (e.src) st.src = e.src;
+    if (e.ip) st.ipMode = e.ip;
+    if (e.idx) {
+      const [a, b, dur] = e.idx;
+      st.idx = Math.round(a + (b - a) * ss(e.t, e.t + dur, t));
+    }
     if (e.q) {
       const [a, b, dur] = e.q;
       st.q = a + (b - a) * ss(e.t, e.t + dur, t);
@@ -108,11 +125,12 @@ export function tourAt(t) {
 // The operator's cursor: travels to each button or the slider knob, presses, and rests between moves.
 export function makeCursor(ui) {
   const EV = SCRIPT.filter((e) => e.t > 0).map((e) => {
-    const k = e.focus ?? e.mode ?? (e.cam ? 'cam_' + e.cam : e.display);
-    return e.q ? {t: e.t, ramp: e.q} : {t: e.t, spot: ui.spots[k]};
+    const k = e.focus ?? e.mode ?? (e.cam ? 'cam_' + e.cam : e.src ? 'src_' + e.src : e.ip ? 'ipm_' + e.ip : e.display);
+    if (e.idx) return {t: e.t, ramp: e.idx, knob: ui.knobAtIdx};
+    return e.q ? {t: e.t, ramp: e.q, knob: ui.knobAt} : {t: e.t, spot: ui.spots[k]};
   });
   const REST = [[900, 640], [760, 600], [1020, 660], [700, 690]];
-  const posOf = (e, t) => (e.ramp ? ui.knobAt(e.ramp[0] + (e.ramp[1] - e.ramp[0]) * ss(e.t, e.t + e.ramp[2], t)) : e.spot);
+  const posOf = (e, t) => (e.ramp ? e.knob(e.ramp[0] + (e.ramp[1] - e.ramp[0]) * ss(e.t, e.t + e.ramp[2], t)) : e.spot);
   const endOf = (e) => e.t + (e.ramp ? e.ramp[2] : 0);
   return (t) => {
     let i = -1;

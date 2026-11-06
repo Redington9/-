@@ -1,7 +1,7 @@
 // The machine's geometry, built from code, and update(res) that poses every part from run(q). Nothing here keeps its
 // own numbers: positions, fills, angles and textures all come from the model result.
 import * as THREE from 'three';
-import {BINS, GREY, LOUPE_BEAT, LOWER_SQ, N, NOMOGRAM, Q_RANGE, QT_NOM, RR_MAX, RR_MIN, run, RULES, SQUARE, UPPER_SQ} from './model.js';
+import {BINS, DATA, GREY, inflection, LOUPE_BEAT, LOWER_SQ, N, NOMOGRAM, Q_RANGE, QT_NOM, RR_MAX, RR_MIN, run, RULES, SQUARE, UPPER_SQ} from './model.js';
 
 const HR_LO = 60000 / RR_MAX; // the HR window the RR governor allows
 const HR_HI = 60000 / RR_MIN;
@@ -54,6 +54,23 @@ export const SCALE = (() => {
   }
   return {A: a, D: d, S: s};
 })();
+
+// the same, over the real dataset: the 99th percentile, so a few outliers do not flatten every other ECG
+export const REAL_SCALE = (() => {
+  const a = [];
+  const d = [];
+  const sv = [];
+  for (const r of DATA.rows) {
+    const A = r.slice(6, 15);
+    const inf = inflection(A);
+    a.push(...A);
+    d.push(...inf.D.map(Math.abs));
+    sv.push(...inf.S.map(Math.abs));
+  }
+  const p99 = (x) => x.sort((u, v) => u - v)[Math.floor(x.length * 0.99)];
+  return {A: p99(a), D: p99(d), S: p99(sv)};
+})();
+export const scaleOf = (res) => (res.real ? REAL_SCALE : SCALE);
 
 const binCol = BINS.map((b) => new THREE.Color(b.col));
 
@@ -558,7 +575,7 @@ export function buildMachine() {
     g.stroke();
     g.fillStyle = '#8d8478';
     g.font = FONT(600, 18);
-    g.fillText(`BEAT ${LOUPE_BEAT} OF ${res.det.R.length} · R at sample ${R} · x: paint value (ms) · y: mV ×${LOUPE.k} · SHAPE INVENTED`, 14, H - 14);
+    g.fillText(`${res.real ? `RECONSTRUCTION OF FILE ROW ${res.real.i + 2} (QT, HR REAL) · ` : ''}BEAT ${LOUPE_BEAT} OF ${res.det.R.length} · R at sample ${R} · x: paint value (ms) · y: mV ×${LOUPE.k} · SHAPE INVENTED`, 14, H - 14);
     t.needsUpdate = true;
   }
   function drawRuler(res) {
@@ -796,15 +813,15 @@ export function buildMachine() {
     paint.nozzle.position.x = xa;
     // hoppers fill to A_k
     hop.forEach((m, k) => {
-      const h = Math.max(0.002, (res.integ.A[k] / SCALE.A) * (HOP.h - 0.12));
+      const h = Math.max(0.002, Math.min(1, res.integ.A[k] / scaleOf(res).A) * (HOP.h - 0.12));
       m.scale.y = h;
       m.position.y = 0.06 + h / 2;
     });
     // gears turn by their difference (a full value turns 0.9 rad at the largest |D| or |S| over the sweep)
-    res.inf.D.forEach((d, k) => (dg[k].rotation.z = -(d / SCALE.D) * 1.6));
+    res.inf.D.forEach((d, k) => (dg[k].rotation.z = -(d / scaleOf(res).D) * 1.6));
     res.inf.S.forEach((s, j) => {
       const {gear, mat} = sg[j];
-      gear.rotation.z = -(s / SCALE.S) * 1.6;
+      gear.rotation.z = -(s / scaleOf(res).S) * 1.6;
       const isM = j + 1 === res.inf.m;
       mat.color.set(isM ? ACC : s < 0 ? '#c9a27a' : '#9aa0a8');
       mat.emissive.set(isM ? ACC : '#000000');

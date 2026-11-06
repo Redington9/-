@@ -15,11 +15,11 @@ const HIGH_EDGE = UPPER_SQ * SQUARE;
 // The six warnings asked for, then the further problems found in the code. on(res): does it apply at this q.
 // sub: the subsystem it hangs on.
 export const WARN = [
-  {id: 1, sub: 'ipsel', title: 'IP: a later true branch overwrites', on: (r) => r.inf.overwritten || r.inf.unset,
-    short: (r) => (r.inf.unset ? 'NO BRANCH FIRED · IP KEEPS THE LAST ECG’S VALUE' : r.inf.overwritten ? `FIRST BRANCH SAID ${r.inf.firstIp}, LAST SAYS ${r.inf.ip}` : 'SEPARATE IFs: THE LAST TRUE ONE WINS'),
+  {id: 1, sub: 'ipsel', title: 'IP: a later true branch overwrites', on: (r) => r.inf.overwritten || r.inf.unset || (r.real && r.inf.codeIp !== r.inf.fileIp),
+    short: (r) => (r.real ? `AS WRITTEN: IP ${r.inf.codeIp ?? 'UNSET'} · FIRST MATCH: ${r.inf.firstIp ?? '—'} · FILE: ${r.inf.fileIp}` : r.inf.unset ? 'NO BRANCH FIRED · IP KEEPS THE LAST ECG’S VALUE' : r.inf.overwritten ? `FIRST BRANCH SAID ${r.inf.firstIp}, LAST SAYS ${r.inf.ip}` : 'SEPARATE IFs: THE LAST TRUE ONE WINS'),
     text: () => 'Script 2’s inflection selector is a run of separate ifs, not else-if. A later true branch overwrites an earlier one: for m = 1 the last positive among S2–S5 wins, not the first. If no branch fires, inflectionPoint keeps the previous ECG’s value (or the first ECG fails with “object not found”).'},
   {id: 2, sub: 'ipsel', title: '`next` skips the CSV row', on: (r) => r.inf.skipped,
-    short: (r) => (r.inf.skipped ? 'THIS ECG’S ROW IS NOT WRITTEN' : '(m = 2, S5 > 0) AND (m = 6, S7 > 0) SKIP THE ROW'),
+    short: (r) => (r.real && r.inf.skipped ? 'SCRIPT 2 AS WRITTEN WOULD SKIP THIS ROW · THE FILE HAS IT' : r.inf.skipped ? 'THIS ECG’S ROW IS NOT WRITTEN' : '(m = 2, S5 > 0) AND (m = 6, S7 > 0) SKIP THE ROW'),
     text: () => 'The `next` in the (m = 2, S5 > 0) and (m = 6, S7 > 0) branches jumps to the next file, so that ECG’s row is never written to All_ECGs_with_coloured_AUC_and_second_derivative.csv and script 3 never sees it. The machine still shows what the rules would have done.'},
   {id: 3, sub: 'rpeak', title: `R threshold: comment ${R_KEEP_COMMENT}, code ${R_KEEP}`, on: () => true,
     short: () => `COMMENT SAYS ${R_KEEP_COMMENT} mV · CODE KEEPS ≥ ${R_KEEP}`,

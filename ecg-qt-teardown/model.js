@@ -102,14 +102,17 @@ export const tWave = (q) => {
   return {start: te - td, end: te, peak: te - td + td * Math.pow(0.5, 1 / BEAT.t.skew), dur: td};
 };
 /** The raw strip as the CSV would hold it (baseline at -0.12 mV), x[0] is sample 1. */
-export function strip(q) {
+/** R peak k (0-based) of a strip with this RR: on a whole sample, so its top is a single sample. */
+export const rPeak = (k, rr = BEAT.rr) => BEAT.firstR + Math.round(k * rr);
+/** The raw strip as the CSV would hold it (baseline at -0.12 mV), x[0] is sample 1. RR in ms (= samples). */
+export function strip(q, rr = BEAT.rr) {
   const x = new Float64Array(N);
-  const B = BEAT;
   for (let s = 1; s <= N; s++) {
-    // the nearest R peak decides (beats never overlap at RR 1000)
-    const k = Math.round((s - B.firstR) / B.rr);
-    const R = B.firstR + k * B.rr;
-    x[s - 1] = beatAt(s - R, q) - LIFT;
+    // the nearest beat and its two neighbours, so a long T wave at a short RR runs on under the next P wave
+    const k = Math.round((s - BEAT.firstR) / rr);
+    let y = 0;
+    for (let j = k - 1; j <= k + 1; j++) y += beatAt(s - rPeak(j, rr), q);
+    x[s - 1] = y - LIFT;
   }
   return x;
 }
@@ -375,10 +378,11 @@ export const C50 = {
 // ------------------------------------------------------------------------------------------------ the whole machine
 const cache = new Map();
 /** Everything, from q alone. Memoised on q rounded to 0.25 ms. */
-export function run(qIn) {
+export function run(qIn, rr = BEAT.rr) {
   const q = Math.round(qIn * 4) / 4;
-  if (cache.has(q)) return cache.get(q);
-  const raw = strip(q);
+  const key = `${q}|${rr}`;
+  if (cache.has(key)) return cache.get(key);
+  const raw = strip(q, rr);
   const det = detectR(raw);
   const gov = rrGovernor(det.R);
   const nom = nomogramCam(gov.hr);
@@ -395,6 +399,84 @@ export function run(qIn) {
     within: out.window ? q >= out.window[0] && q <= out.window[1] : null,
   };
   if (cache.size > 600) cache.delete(cache.keys().next().value);
-  cache.set(q, res);
+  cache.set(key, res);
   return res;
+}
+
+// ------------------------------------------------------------------------------------------------ the real dataset
+// All_ECGs_with_pseudo-colouring_features.xlsx (dataset.js, de-identified). A real ECG drives the machine from its
+// measured areas onward; the raw ECG is not in the file, so the strip, peaks and paint are the synthetic beat redrawn
+// at this ECG's QT and HR (shape still invented). The nomogram value is looked up from the ECG's real HR.
+import {CATS, DRUGS, ROWS} from './dataset.js';
+export const DATA = {
+  rows: ROWS,
+  drugs: DRUGS,
+  cats: CATS,
+  source: `All_ECGs_with_pseudo-colouring_features.xlsx · ${ROWS.length} ECGs`,
+  // ECGs with a QT (13 rows say NA), sorted by QT minus their nomogram value: the picker runs from far below the
+  // nomogram line to far above it
+  order: ROWS.map((r, i) => i).filter((i) => ROWS[i][0] !== null).sort((a, b) => ROWS[a][0] - ROWS[a][2] - (ROWS[b][0] - ROWS[b][2]) || a - b),
+};
+const field = (r) => ({qt: r[0], hr: r[1], nomV: r[2], onAbove: r[3] === 1, cat: CATS[r[4]], drug: DRUGS[r[5]], A: r.slice(6, 15), ipFile: r[15]});
+export const IP_MODES = ['file', 'code'];
+/** ECG i (0-based row of the file) through the machine. ipMode 'file': the IP recorded in the file; 'code': script 2's
+ *  chain as written, applied to the file's areas. */
+export function runReal(i, ipMode = 'file') {
+  const key = `real|${i}|${ipMode}`;
+  if (cache.has(key)) return cache.get(key);
+  const f = field(ROWS[i]);
+  const rr = 60000 / f.hr;
+  const base = run(f.qt, rr);
+  const nom = nomogramCam(f.hr);
+  const {paint, starts} = paintHead(base.det.R, nom);
+  const rul = ruler(nom);
+  const synth = integrator(base.mv, paint, rul.binOf);
+  const code = inflection(f.A);
+  const inf = ipMode === 'file' ? {...code, ip: f.ipFile, unset: false} : code;
+  const out = ruleBank(inf.ip, inf.S, nom.qt, f.hr);
+  const res = {
+    ...base,
+    q: f.qt,
+    gov: {...base.gov, hr: f.hr, rr, kept: base.gov.kept},
+    nom, paint, starts, ruler: rul,
+    integ: {...synth, A: f.A, synthA: synth.A},
+    inf: {...inf, codeIp: code.ip, firstIp: code.firstIp, fileIp: f.ipFile, mode: ipMode},
+    out,
+    dif: f.qt - nom.qt,
+    within: out.window ? f.qt >= out.window[0] && f.qt <= out.window[1] : null,
+    real: {i, ...f, truth: f.onAbove ? 'On/Above' : 'Below', correct: out.pred ? (out.pred === 'Abnormal') === f.onAbove : null, nomMatches: nom.qt === f.nomV},
+  };
+  if (cache.size > 600) cache.delete(cache.keys().next().value);
+  cache.set(key, res);
+  return res;
+}
+/** The rule bank over every ECG with a QT, in one IP mode: confusion against the file's Nomogram column, rules used,
+ *  how often the QT falls in the rule's window, and what script 2 as written would do to these rows. */
+export function evaluate(ipMode) {
+  // cls per file row: 0 TN, 1 TP, 2 FP, 3 FN, -1 no verdict or no QT
+  const st = {n: 0, tp: 0, fp: 0, tn: 0, fn: 0, none: 0, within: 0, rules: {}, codeSkips: 0, codeOverwrites: 0, ipAgree: 0, firstAgree: 0, nomAgree: 0, cls: new Int8Array(ROWS.length).fill(-1)};
+  for (const i of DATA.order) {
+    const f = field(ROWS[i]);
+    const code = inflection(f.A);
+    const ip = ipMode === 'file' ? f.ipFile : code.ip;
+    const out = ruleBank(ip, code.S, f.nomV, f.hr);
+    st.n++;
+    if (code.skipped) st.codeSkips++;
+    if (code.overwritten) st.codeOverwrites++;
+    if (code.ip === f.ipFile) st.ipAgree++;
+    if (code.firstIp === f.ipFile) st.firstAgree++;
+    if (roundR(NOMOGRAM.lookup(f.hr)) === f.nomV) st.nomAgree++;
+    if (!out.pred) {
+      st.none++;
+      continue;
+    }
+    st.rules[out.rule.id] = (st.rules[out.rule.id] || 0) + 1;
+    const ab = out.pred === 'Abnormal';
+    if (ab && f.onAbove) [st.tp, st.cls[i]] = [st.tp + 1, 1];
+    else if (ab) [st.fp, st.cls[i]] = [st.fp + 1, 2];
+    else if (f.onAbove) [st.fn, st.cls[i]] = [st.fn + 1, 3];
+    else [st.tn, st.cls[i]] = [st.tn + 1, 0];
+    if (f.qt >= out.window[0] && f.qt <= out.window[1]) st.within++;
+  }
+  return st;
 }
